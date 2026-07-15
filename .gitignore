@@ -1,0 +1,12 @@
+.DS_Store
+.gradle/
+.idea/
+.kotlin/
+build/
+local.properties
+
+# Android / Gradle build outputs
+*/build/
+captures/
+.externalNativeBuild/
+.cxx/

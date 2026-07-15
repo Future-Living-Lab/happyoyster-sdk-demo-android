@@ -1,0 +1,14 @@
+<!-- Matches Web src/assets/icons/wander-action-attack.svg at 22x22. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="22dp"
+    android:height="22dp"
+    android:viewportWidth="22"
+    android:viewportHeight="22">
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M10.9991,1.60394V7.56228M20.3949,10.9998H14.4366M10.9991,14.4373V20.3956M7.5616,10.9998H1.60327M10.9991,17.6456C7.32872,17.6456 4.35327,14.6702 4.35327,10.9998C4.35327,7.32939 7.32872,4.35394 10.9991,4.35394C14.6695,4.35394 17.6449,7.32939 17.6449,10.9998C17.6449,14.6702 14.6695,17.6456 10.9991,17.6456Z"
+        android:strokeWidth="1.375"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

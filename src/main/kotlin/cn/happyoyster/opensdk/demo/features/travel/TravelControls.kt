@@ -493,12 +493,30 @@ private fun TravelInteractionButton(
     }
 }
 
+private fun List<String>.toTranslationCommand(): String {
+    val vertical = lastOrNull { it == "W" || it == "S" }
+    val horizontal = lastOrNull { it == "A" || it == "D" }
+    return if (vertical != null && horizontal != null) {
+        "${vertical}_$horizontal"
+    } else {
+        vertical ?: horizontal ?: COMMAND_NONE
+    }
+}
+
+private fun List<String>.toRotationCommand(): String {
+    val vertical = lastOrNull { it == "Mouse_Up" || it == "Mouse_Down" }
+    val horizontal = lastOrNull { it == "Mouse_Left" || it == "Mouse_Right" }
+    return if (vertical != null && horizontal != null) {
+        "${vertical}_${horizontal.removePrefix("Mouse_")}"
+    } else {
+        vertical ?: horizontal ?: COMMAND_NONE
+    }
+}
+
 private fun Map<AdventureCommandDimension, List<String>>.toAdventureCommand(): AdventureCommand =
     AdventureCommand(
-        translation = this[AdventureCommandDimension.Translation].orEmpty().lastOrNull()
-            ?: COMMAND_NONE,
-        rotation = this[AdventureCommandDimension.Rotation].orEmpty().lastOrNull()
-            ?: COMMAND_NONE,
+        translation = this[AdventureCommandDimension.Translation].orEmpty().toTranslationCommand(),
+        rotation = this[AdventureCommandDimension.Rotation].orEmpty().toRotationCommand(),
         interaction = this[AdventureCommandDimension.Interaction].orEmpty().lastOrNull()
             ?: COMMAND_NONE,
     )

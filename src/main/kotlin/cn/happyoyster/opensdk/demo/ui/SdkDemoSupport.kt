@@ -69,10 +69,7 @@ internal fun List<DemoWorld>.replaceWorld(world: DemoWorld): List<DemoWorld> =
         this + world
     }
 
-internal fun Throwable.userMessage(): String = message ?: javaClass.simpleName
-
 internal fun SDKError.sdkDemoMessage(context: Context): String {
-    val rawText = raw?.toString()
     val summaryResId = when (code) {
         101001 -> R.string.sdk_error_invalid_token
         103001 -> R.string.sdk_error_no_active_travel
@@ -90,13 +87,8 @@ internal fun SDKError.sdkDemoMessage(context: Context): String {
         108001 -> R.string.sdk_error_remote_feature_disabled
         else -> null
     }
-    val summary = summaryResId?.let(context::getString)
-        ?: (message ?: context.getString(R.string.sdk_error_unknown, code))
-    return if (rawText.isNullOrBlank()) {
-        summary
-    } else {
-        context.getString(R.string.sdk_error_with_raw, summary, rawText)
-    }
+    return summaryResId?.let(context::getString)
+        ?: context.getString(R.string.sdk_error_unknown, code)
 }
 
 internal fun Context.withSdkDemoLanguage(language: SdkDemoLanguage): Context {

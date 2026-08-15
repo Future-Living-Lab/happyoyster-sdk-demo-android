@@ -3,8 +3,7 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- Adventure sendCommand usually works without RECORD_AUDIO. The SDK Demo keeps this
-         permission as a compatibility-path demonstration; the SDK never records or uploads audio. -->
+    <!-- Recommended for Adventure sendCommand compatibility on some devices. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application

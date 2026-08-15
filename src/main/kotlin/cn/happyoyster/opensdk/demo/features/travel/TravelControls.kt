@@ -131,25 +131,25 @@ private val travelInteractionActions = listOf(
     TravelControlAction(
         R.string.attack,
         AdventureCommandDimension.Interaction,
-        "Attack",
+        "J",
         R.drawable.ic_wander_attack,
     ),
     TravelControlAction(
         R.string.squat,
         AdventureCommandDimension.Interaction,
-        "Squat",
+        "K",
         R.drawable.ic_wander_crouch,
     ),
     TravelControlAction(
         R.string.jump,
         AdventureCommandDimension.Interaction,
-        "Jump",
+        "Space",
         R.drawable.ic_wander_jump,
     ),
     TravelControlAction(
         R.string.sprint,
         AdventureCommandDimension.Interaction,
-        "Sprint",
+        "L",
         R.drawable.ic_wander_sprint,
     ),
 )
@@ -572,22 +572,22 @@ private fun TapOrHoldButton(
                             latestOnCommandUpdate(
                                 action.dimension,
                                 action.value,
-                            HoldPhase.Clear,
+                                HoldPhase.Clear,
                             )
                         } else {
-                        if (downOk) {
+                            if (downOk) {
+                                latestOnCommandUpdate(
+                                    action.dimension,
+                                    action.value,
+                                    HoldPhase.HoldStart,
+                                )
+                            }
+                            val released = tryAwaitRelease()
                             latestOnCommandUpdate(
                                 action.dimension,
                                 action.value,
-                                HoldPhase.HoldStart,
-                                )
-                            }
-                        val released = tryAwaitRelease()
-                        latestOnCommandUpdate(
-                            action.dimension,
-                            action.value,
-                            if (released && downOk) HoldPhase.Release else HoldPhase.Clear,
-                        )
+                                if (released && downOk) HoldPhase.Release else HoldPhase.Clear,
+                            )
                         }
                         settled = true
                     } finally {

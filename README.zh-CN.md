@@ -5,7 +5,7 @@
 本工程是 Happy Oyster Android SDK 的端到端示例 App，演示宿主 App 如何组合：
 
 - 三方服务端网关 `/server-api/*`
-- Maven 依赖：`cn.happyoyster:opensdk:0.1.3`（Maven Central）
+- Maven 依赖：`cn.happyoyster:opensdk:0.1.10`（Maven Central）
 - 世界创建、游玩、历史、产物与运行中控制
 
 `/server-api/*` 是 Demo 三方服务端接口，不是 Android SDK 公开 API。
@@ -85,5 +85,5 @@ adb install -r build/outputs/apk/debug/happyoyster-sdk-demo-android-debug.apk
 
 - `gateway/`：演示三方服务端 `/server-api/*` 调用。
 - `sdk/`：只薄封装 `HappyOyster` 公开入口。
-- SDK 通过 Maven Central 依赖 `cn.happyoyster:opensdk:0.1.3`。
+- SDK 通过 Maven Central 依赖 `cn.happyoyster:opensdk:0.1.10`。
 - Android App 不包含三方服务端；生产 App 必须接入以合适服务端语言实现、且具备安全防护的自有三方服务端。

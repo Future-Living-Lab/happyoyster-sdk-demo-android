@@ -51,8 +51,7 @@ class SdkDemoActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = true
         WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightNavigationBars = true
-        // Adventure controls usually work without RECORD_AUDIO. The Demo requests it only to
-        // exercise the SDK's recommended compatibility path; no real audio is captured or uploaded.
+        // Recommended for Adventure sendCommand compatibility on some devices.
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
             PackageManager.PERMISSION_GRANTED
         ) {
@@ -100,9 +99,6 @@ private fun SdkDemoApp() {
         context.withSdkDemoLanguage(state.config.language)
     }
 
-    LaunchedEffect(state.config.gatewayBaseUrl) {
-        state.onGatewayBaseUrlChanged()
-    }
     DisposableEffect(state.config.sdkApiHost) {
         state.initializeSdk()
         onDispose { state.disposeSdkListener() }
@@ -195,6 +191,7 @@ private fun SdkDemoApp() {
                             DemoTab.Profile -> ProfileTab(
                                 config = state.config,
                                 onConfigChange = state::persist,
+                                onApplyConfiguration = state::applyEndpointConfiguration,
                             )
                         }
                     }

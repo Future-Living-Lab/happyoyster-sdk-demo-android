@@ -9,9 +9,15 @@ import cn.happyoyster.opensdk.HappyOysterListener
 import cn.happyoyster.opensdk.LogLevel
 import cn.happyoyster.opensdk.RewindTravelData
 import cn.happyoyster.opensdk.SDKConfig
+import cn.happyoyster.opensdk.SDKError
 import cn.happyoyster.opensdk.SendInstructData
 import cn.happyoyster.opensdk.StartTravelData
 import cn.happyoyster.opensdk.TravelStateData
+
+private const val TRAVEL_BUSY_ERROR_CODE = 103004
+
+internal fun Throwable.isTravelBusyError(): Boolean =
+    this is SDKError && code == TRAVEL_BUSY_ERROR_CODE
 
 internal class DemoSdkSession(
     private val context: Context,

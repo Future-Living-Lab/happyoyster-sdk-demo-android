@@ -33,6 +33,7 @@ import cn.happyoyster.opensdk.demo.ui.isHttpUrl
 internal fun ProfileTab(
     config: SdkDemoConfig,
     onConfigChange: (SdkDemoConfig) -> Unit,
+    onApplyConfiguration: (gatewayBaseUrl: String, sdkApiHost: String) -> Unit,
 ) {
     var gatewayBaseUrlDraft by remember(config.gatewayBaseUrl) {
         mutableStateOf(config.gatewayBaseUrl)
@@ -77,11 +78,9 @@ internal fun ProfileTab(
                 )
                 Button(
                     onClick = {
-                        onConfigChange(
-                            config.copy(
-                                gatewayBaseUrl = gatewayBaseUrlDraft.trim(),
-                                sdkApiHost = sdkApiHostDraft.trim(),
-                            ),
+                        onApplyConfiguration(
+                            gatewayBaseUrlDraft.trim(),
+                            sdkApiHostDraft.trim(),
                         )
                     },
                     enabled = configDraftValid,

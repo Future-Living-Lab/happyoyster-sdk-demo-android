@@ -28,11 +28,11 @@ import cn.happyoyster.opensdk.demo.gateway.WorldKind
 import cn.happyoyster.opensdk.demo.gateway.mergeFrom
 import cn.happyoyster.opensdk.demo.gateway.withFirstFrame
 import cn.happyoyster.opensdk.demo.sdk.DemoSdkSession
+import cn.happyoyster.opensdk.demo.sdk.isTravelBusyError
 import cn.happyoyster.opensdk.demo.ui.isApiHost
 import cn.happyoyster.opensdk.demo.ui.isHttpUrl
 import cn.happyoyster.opensdk.demo.ui.sdkDemoMessage
 import cn.happyoyster.opensdk.demo.ui.replaceWorld
-import cn.happyoyster.opensdk.demo.ui.userMessage
 import cn.happyoyster.opensdk.demo.ui.withSdkDemoLanguage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
@@ -64,13 +64,7 @@ internal class SdkDemoAppState(
 ) {
     var config by mutableStateOf(store.load())
         private set
-    var selectedTab by mutableStateOf(
-        if (config.gatewayBaseUrl.isHttpUrl() && config.sdkApiHost.isApiHost()) {
-            DemoTab.Create
-        } else {
-            DemoTab.Profile
-        },
-    )
+    var selectedTab by mutableStateOf(DemoTab.Profile)
         private set
     var error by mutableStateOf<SdkDemoError?>(null)
         private set
@@ -193,8 +187,27 @@ internal class SdkDemoAppState(
 
     fun initializeSdk() {
         if (!config.sdkApiHost.isApiHost()) return
-        SdkDemoLog.add(SdkDemoLogKind.INFO, "HappyOyster.initialize", config.sdkApiHost)
-        sdkSession.initialize(config.sdkApiHost, config.token)
+        val label = "HappyOyster.initialize"
+        SdkDemoLog.add(SdkDemoLogKind.SDK_CALL, label, config.sdkApiHost)
+        val result = runCatching {
+            sdkSession.initialize(config.sdkApiHost, config.token)
+        }
+        result.exceptionOrNull()?.let { cause ->
+            if (cause.isTravelBusyError()) {
+                sdkSession.addListener(listener)
+                sdkListenerRegistered = true
+                sdkSession.updateToken(config.token)
+                SdkDemoLog.add(
+                    SdkDemoLogKind.SDK_RESULT,
+                    label,
+                    "travel already active; callbacks restored",
+                )
+                return
+            }
+            report(R.string.action_initialize_sdk, cause)
+            return
+        }
+        SdkDemoLog.add(SdkDemoLogKind.SDK_RESULT, label, "ok")
         sdkSession.addListener(listener)
         sdkListenerRegistered = true
     }
@@ -210,7 +223,8 @@ internal class SdkDemoAppState(
         sdkSession.updateToken(config.token)
     }
 
-    fun onGatewayBaseUrlChanged() {
+    fun applyEndpointConfiguration(gatewayBaseUrl: String, sdkApiHost: String) {
+        persist(config.copy(gatewayBaseUrl = gatewayBaseUrl, sdkApiHost = sdkApiHost))
         if (!config.gatewayBaseUrl.isHttpUrl() || !config.sdkApiHost.isApiHost()) {
             worlds = emptyList()
             travels = emptyList()
@@ -227,13 +241,29 @@ internal class SdkDemoAppState(
         }
         error = null
         scope.launch {
-            runCatching { refreshTokenNow(refreshWorldsAfter = true) }
-                .onFailure { report(R.string.action_refresh_token, it) }
+            runCatching { refreshTokenNow(refreshWorldsAfter = false) }
+                .rethrowCancellation()
+                .onSuccess { toast(R.string.config_applied_success) }
+                .onFailure { cause ->
+                    error = SdkDemoError.Action(
+                        actionResId = R.string.apply_configuration,
+                        detail = localizedContext.getString(R.string.gateway_connection_failed),
+                    )
+                    SdkDemoLog.add(
+                        SdkDemoLogKind.ERROR,
+                        localizedContext.getString(R.string.apply_configuration),
+                        cause.sdkDemoLogString(),
+                    )
+                }
         }
     }
 
     fun selectTab(tab: DemoTab) {
         selectedTab = tab
+        if (!config.gatewayBaseUrl.isHttpUrl() || !config.sdkApiHost.isApiHost()) {
+            error = null
+            return
+        }
         if (tab == DemoTab.Play) refreshWorlds()
         if (tab == DemoTab.History) refreshTravels()
     }
@@ -308,6 +338,7 @@ internal class SdkDemoAppState(
         scope.launch {
             error = null
             runCatching { refreshTokenNow(refreshWorldsAfter = true) }
+                .rethrowCancellation()
                 .onFailure { report(R.string.action_refresh_token, it) }
         }
     }
@@ -551,12 +582,12 @@ internal class SdkDemoAppState(
                         ) { sdkSession.endTravel() }
                         throw postStartError
                     }
-                }.onSuccess {
+                }.rethrowCancellation().onSuccess {
                     activeTravel = it
                     travelStatus = TravelStatusValue.Init
                     pausing = false
                     endingTravel = false
-                }.onFailure { report(R.string.action_start_travel, it) }
+                }.onFailure(::reportStartTravelFailure)
             } finally {
                 startingTravel = false
             }
@@ -716,7 +747,7 @@ internal class SdkDemoAppState(
         val detail = if (cause is SDKError) {
             cause.sdkDemoMessage(localizedContext)
         } else {
-            cause.userMessage()
+            localizedContext.getString(R.string.error_detail_check_log)
         }
         error = SdkDemoError.Action(actionResId, detail)
     }
@@ -728,6 +759,17 @@ internal class SdkDemoAppState(
             localizedContext.getString(actionResId),
             cause.sdkDemoLogString(),
         )
+    }
+
+    private fun reportStartTravelFailure(cause: Throwable) {
+        if (cause.isTravelBusyError()) {
+            error = SdkDemoError.Action(
+                actionResId = R.string.action_start_travel,
+                detail = localizedContext.getString(R.string.travel_already_active),
+            )
+            return
+        }
+        report(R.string.action_start_travel, cause)
     }
 
     private fun toast(@StringRes resId: Int, long: Boolean = false) {

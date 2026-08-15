@@ -7,6 +7,7 @@ import android.util.Log
 import androidx.compose.runtime.mutableStateListOf
 import cn.happyoyster.opensdk.SDKError
 import cn.happyoyster.opensdk.demo.gateway.DemoGatewayException
+import kotlinx.coroutines.CancellationException
 
 internal const val SDK_DEMO_LOG_TAG = "HappyOysterSdkDemo"
 private const val MAX_LOG_ENTRIES = 200
@@ -63,7 +64,10 @@ internal object SdkDemoLog {
         render: (T) -> String = { it.toString() },
         block: suspend () -> T,
     ): Result<T> {
-        return runCatching { block() }.also { logSdkResult(label, render, it) }
+        add(SdkDemoLogKind.SDK_CALL, label)
+        return runCatching { block() }
+            .rethrowCancellation()
+            .also { logSdkResult(label, render, it) }
     }
 
     fun <T> sdkCallSync(
@@ -71,6 +75,7 @@ internal object SdkDemoLog {
         render: (T) -> String = { it.toString() },
         block: () -> T,
     ): Result<T> {
+        add(SdkDemoLogKind.SDK_CALL, label)
         return runCatching { block() }.also { logSdkResult(label, render, it) }
     }
 
@@ -85,12 +90,17 @@ internal object SdkDemoLog {
         block: suspend () -> T,
     ): Result<T> {
         val startMs = SystemClock.elapsedRealtime()
-        return runCatching { block() }.also { result ->
+        return runCatching { block() }.rethrowCancellation().also { result ->
             val elapsedMs = SystemClock.elapsedRealtime() - startMs
             result.onSuccess { add(SdkDemoLogKind.GATEWAY, label, "ok, ${render(it)}, elapsed=${elapsedMs}ms") }
                 .onFailure { add(SdkDemoLogKind.ERROR, label, "${it.sdkDemoLogString()}, elapsed=${elapsedMs}ms") }
         }
     }
+}
+
+internal fun <T> Result<T>.rethrowCancellation(): Result<T> {
+    exceptionOrNull()?.let { if (it is CancellationException) throw it }
+    return this
 }
 
 internal fun Throwable.sdkDemoLogString(): String =

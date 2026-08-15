@@ -5,7 +5,7 @@
 This project is an end-to-end sample app for the Happy Oyster Android SDK. It shows how a host app combines:
 
 - A third-party server gateway exposing `/server-api/*`
-- The Maven dependency `cn.happyoyster:opensdk:0.1.3` (Maven Central)
+- The Maven dependency `cn.happyoyster:opensdk:0.1.10` (Maven Central)
 - World creation, play, history, artifacts, and in-travel controls
 
 `/server-api/*` endpoints belong to the demo's third-party server; they are not part of the Android SDK public API.
@@ -85,5 +85,5 @@ To support `http://` debug gateways, this demo allows cleartext HTTP. Do not cop
 
 - `gateway/`: demonstrates third-party server `/server-api/*` calls.
 - `sdk/`: a thin wrapper over the public `HappyOyster` entry points only.
-- The SDK is consumed from Maven Central as `cn.happyoyster:opensdk:0.1.3`.
+- The SDK is consumed from Maven Central as `cn.happyoyster:opensdk:0.1.10`.
 - The Android app does not contain a third-party server service. Production apps must use their own secured third-party server, implemented in any suitable server-side language.

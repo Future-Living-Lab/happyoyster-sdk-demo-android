@@ -6,7 +6,7 @@ plugins {
 }
 
 // Keep plugin/SDK versions aligned with the Happy Oyster Android SDK release this demo tracks.
-val opensdkVersion = "0.1.3"
+val opensdkVersion = "0.1.10"
 val okhttpVersion = "4.12.0"
 val coroutinesVersion = "1.9.0"
 val kotlinxSerializationVersion = "1.7.3"

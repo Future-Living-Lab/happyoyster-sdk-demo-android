@@ -11,6 +11,7 @@ import kotlinx.coroutines.CancellationException
 
 internal const val SDK_DEMO_LOG_TAG = "HappyOysterSdkDemo"
 private const val MAX_LOG_ENTRIES = 200
+private val SAFE_ERROR_CODE = Regex("[A-Za-z0-9_]{1,128}")
 
 internal enum class SdkDemoLogKind {
     SDK_CALL,
@@ -105,7 +106,10 @@ internal fun <T> Result<T>.rethrowCancellation(): Result<T> {
 
 internal fun Throwable.sdkDemoLogString(): String =
     when (this) {
-        is SDKError -> "SDKError(code=$code, raw=${raw ?: "null"})"
-        is DemoGatewayException -> "GatewayError(code=$code, errorCode=$errorCode, message=$message)"
+        is SDKError -> "SDKError(code=$code, rawType=${raw?.javaClass?.simpleName ?: "null"})"
+        is DemoGatewayException -> {
+            val safeErrorCode = errorCode?.takeIf { it.matches(SAFE_ERROR_CODE) }
+            "GatewayError(code=$code, errorCode=$safeErrorCode)"
+        }
         else -> message ?: javaClass.simpleName
     }

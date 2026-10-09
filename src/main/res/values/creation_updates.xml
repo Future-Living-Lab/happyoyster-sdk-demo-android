@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="acting_create_help_required">表演模式需要填写描述并提供首帧图片。</string>
+    <string name="create_world_in_progress">创建中…</string>
+    <string name="story_reference_images_help">参考图可选，最多 6 张。支持图片链接、Base64、选择图片或从剪贴板粘贴。</string>
+    <string name="story_reference_image_number">参考图 %1$d</string>
+    <string name="story_reference_image_label">参考图链接或 Base64</string>
+    <string name="story_reference_image_optional">选填；空白项不会提交</string>
+    <string name="story_reference_image_add">添加参考图</string>
+    <string name="story_reference_image_remove">移除参考图</string>
+</resources>

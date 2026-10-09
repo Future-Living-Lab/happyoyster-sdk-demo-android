@@ -1,10 +1,13 @@
 package cn.happyoyster.opensdk.demo.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
@@ -27,7 +30,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import cn.happyoyster.opensdk.demo.R
 import cn.happyoyster.opensdk.demo.app.DemoTab
 
@@ -39,10 +41,12 @@ internal fun SdkDemoTabBar(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 4.dp),
+            .navigationBarsPadding()
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
         color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(24.dp),
-        tonalElevation = 4.dp,
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shadowElevation = 8.dp,
     ) {
         Row(
             modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 6.dp, bottom = 4.dp),
@@ -88,20 +92,20 @@ private fun SdkDemoTabItem(
         ),
         color = color,
         contentColor = contentColor,
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(14.dp),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 5.dp),
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(1.dp),
         ) {
-            DemoTabIcon(tab, selected, Modifier.size(16.dp))
+            DemoTabIcon(tab, selected, Modifier.size(20.dp))
             Text(
                 text = tab.label(),
                 maxLines = 1,
                 overflow = TextOverflow.Clip,
                 softWrap = false,
-                fontSize = 10.sp,
+                fontSize = 11.sp,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             )
         }

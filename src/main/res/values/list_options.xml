@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="list_filter_label">类型</string>
+    <string name="list_sort_label">时间排序</string>
+    <string name="list_all_modes">全部</string>
+    <string name="list_newest_first">最新优先</string>
+    <string name="list_oldest_first">最早优先</string>
+    <string name="list_no_matches">暂无符合条件的记录</string>
+    <string name="list_try_another_mode">试试其他类型，或选择全部。</string>
+</resources>

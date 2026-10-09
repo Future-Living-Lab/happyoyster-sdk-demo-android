@@ -14,15 +14,19 @@ import androidx.compose.ui.unit.dp
 import cn.happyoyster.opensdk.AdventureCommand
 import cn.happyoyster.opensdk.TravelStatusValue
 import cn.happyoyster.opensdk.demo.app.ActiveTravel
+import cn.happyoyster.opensdk.demo.app.DemoTravelTransition
 import cn.happyoyster.opensdk.demo.app.ScriptListPreset
 import cn.happyoyster.opensdk.demo.ui.ErrorBanner
 
 @Composable
 internal fun TravelScreen(
     errorMessage: String?,
+    onDismissError: () -> Unit,
     travel: ActiveTravel,
     status: TravelStatusValue?,
     pausing: Boolean,
+    transition: DemoTravelTransition,
+    recovering: Boolean,
     ending: Boolean,
     directingInstruct: String,
     rewindToSec: String,
@@ -42,15 +46,17 @@ internal fun TravelScreen(
     onRewind: () -> Unit,
     onEnd: () -> Unit,
 ) {
-    var logExpanded by rememberSaveable { androidx.compose.runtime.mutableStateOf(true) }
+    var logExpanded by rememberSaveable(travel.data.encryptedTravelId) {
+        androidx.compose.runtime.mutableStateOf(travel.data.aspectRatio != "9:16")
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        ErrorBanner(errorMessage)
-        TravelVideoView(travel.videoView)
+        ErrorBanner(errorMessage, onDismissError)
+        TravelVideoView(travel.videoView, travel.data.aspectRatio)
         TravelLogView(
             modifier = Modifier
                 .fillMaxWidth()
@@ -65,6 +71,8 @@ internal fun TravelScreen(
             travel = travel,
             status = status,
             pausing = pausing,
+            transition = transition,
+            recovering = recovering,
             ending = ending,
             capHeight = logExpanded,
             directingInstruct = directingInstruct,

@@ -6,7 +6,7 @@ plugins {
 }
 
 // Keep plugin/SDK versions aligned with the Happy Oyster Android SDK release this demo tracks.
-val opensdkVersion = "0.1.10"
+val opensdkVersion = "0.2.3"
 val okhttpVersion = "4.12.0"
 val coroutinesVersion = "1.9.0"
 val kotlinxSerializationVersion = "1.7.3"
@@ -73,4 +73,5 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:$media3Version")
     implementation("androidx.media3:media3-ui:$media3Version")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
 }

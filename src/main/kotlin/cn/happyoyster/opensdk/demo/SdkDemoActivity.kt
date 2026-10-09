@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -19,8 +20,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -39,6 +44,9 @@ import cn.happyoyster.opensdk.demo.features.travel.TravelScreen
 import cn.happyoyster.opensdk.demo.sdk.DemoSdkSession
 import cn.happyoyster.opensdk.demo.ui.ErrorBanner
 import cn.happyoyster.opensdk.demo.ui.SdkDemoTabBar
+import cn.happyoyster.opensdk.demo.ui.SdkDemoTheme
+import cn.happyoyster.opensdk.demo.ui.DemoModeFilter
+import cn.happyoyster.opensdk.demo.ui.DemoTimeOrder
 import cn.happyoyster.opensdk.demo.ui.withSdkDemoLanguage
 
 class SdkDemoActivity : ComponentActivity() {
@@ -64,7 +72,7 @@ class SdkDemoActivity : ComponentActivity() {
             requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         setContent {
-            MaterialTheme {
+            SdkDemoTheme {
                 SdkDemoApp()
             }
         }
@@ -84,7 +92,14 @@ private fun SdkDemoError.message(): String =
 
 @Composable
 private fun SdkDemoApp() {
+    var worldModeFilter by rememberSaveable { mutableStateOf(DemoModeFilter.All) }
+    var worldTimeOrder by rememberSaveable { mutableStateOf(DemoTimeOrder.NewestFirst) }
+    var historyModeFilter by rememberSaveable { mutableStateOf(DemoModeFilter.All) }
+    var historyTimeOrder by rememberSaveable { mutableStateOf(DemoTimeOrder.NewestFirst) }
     val context = LocalContext.current
+    val activityResultRegistryOwner = checkNotNull(LocalActivityResultRegistryOwner.current) {
+        "SdkDemoActivity must provide an ActivityResultRegistryOwner"
+    }
     val appContext = context.applicationContext
     val scope = rememberCoroutineScope()
     val state = remember(appContext) {
@@ -99,24 +114,29 @@ private fun SdkDemoApp() {
         context.withSdkDemoLanguage(state.config.language)
     }
 
-    DisposableEffect(state.config.sdkApiHost) {
-        state.initializeSdk()
+    DisposableEffect(state) {
         onDispose { state.disposeSdkListener() }
     }
     LaunchedEffect(state.config.token) {
         state.updateSdkToken()
     }
 
-    CompositionLocalProvider(LocalContext provides localizedContext) {
-        Surface(modifier = Modifier.fillMaxSize()) {
+    CompositionLocalProvider(
+        LocalContext provides localizedContext,
+        LocalActivityResultRegistryOwner provides activityResultRegistryOwner,
+    ) {
+        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             val travel = state.activeTravel
             if (travel != null) {
                 BackHandler(enabled = true, onBack = state::endTravel)
                 TravelScreen(
                     errorMessage = state.error?.message(),
+                    onDismissError = state::dismissError,
                     travel = travel,
                     status = state.travelStatus,
                     pausing = state.pausing,
+                    transition = state.travelTransition,
+                    recovering = state.recovering,
                     ending = state.endingTravel,
                     directingInstruct = state.directingInstruct,
                     rewindToSec = state.rewindToSec,
@@ -138,7 +158,7 @@ private fun SdkDemoApp() {
                 )
             } else {
                 Scaffold(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    containerColor = MaterialTheme.colorScheme.background,
                     bottomBar = {
                         SdkDemoTabBar(
                             selectedTab = state.selectedTab,
@@ -150,22 +170,28 @@ private fun SdkDemoApp() {
                         modifier = Modifier
                             .padding(padding)
                             .fillMaxSize()
-                            .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 2.dp),
+                            .padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         if (state.selectedTab != DemoTab.Play) {
-                            ErrorBanner(state.error?.message())
+                            ErrorBanner(state.error?.message(), state::dismissError)
                         }
                         when (state.selectedTab) {
                             DemoTab.Create -> CreateTab(
                                 form = state.createForm,
+                                creating = state.creatingWorld,
                                 scriptListPresets = state.scriptListPresets,
                                 onFormChange = { state.createForm = it },
                                 onCreate = state::createWorld,
                             )
                             DemoTab.Play -> PlayTab(
                                 errorMessage = state.error?.message(),
+                                onDismissError = state::dismissError,
                                 worlds = state.worlds,
+                                modeFilter = worldModeFilter,
+                                timeOrder = worldTimeOrder,
+                                onModeFilterChange = { worldModeFilter = it },
+                                onTimeOrderChange = { worldTimeOrder = it },
                                 language = state.config.language,
                                 coverRefreshKey = state.coverRefreshKey,
                                 loadingCoverWorldIds = state.coverLoadingWorldIds,
@@ -177,9 +203,14 @@ private fun SdkDemoApp() {
                             )
                             DemoTab.History -> HistoryTab(
                                 travels = state.travels,
+                                modeFilter = historyModeFilter,
+                                timeOrder = historyTimeOrder,
+                                onModeFilterChange = { historyModeFilter = it },
+                                onTimeOrderChange = { historyTimeOrder = it },
                                 artifactsByTravelId = state.artifactsByTravelId,
                                 artifactLoadingTravelIds = state.artifactLoadingTravelIds,
                                 artifactPendingTravelIds = state.artifactPendingTravelIds,
+                                artifactFailedTravelIds = state.artifactFailedTravelIds,
                                 artifactRefreshKey = state.artifactRefreshKey,
                                 worldDetailsById = state.worldDetailsById,
                                 language = state.config.language,

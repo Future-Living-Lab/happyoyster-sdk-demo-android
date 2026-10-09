@@ -1,6 +1,6 @@
 [
   {
-    "id": "be_client_50732002314_s2v_r1669",
+    "id": "sample_script_01",
     "name": "深夜温柔陪聊",
     "scenario": "陪伴疗愈",
     "scriptList": {
@@ -338,7 +338,7 @@
     "firstFrameImageUrl": "https://cdn.aorizon.com/images/img-1783480057953-b9bj25ssq96-origin.png"
   },
   {
-    "id": "be_client_52017506838_i2v_r556",
+    "id": "sample_script_02",
     "name": "雨天咖啡馆独处",
     "scenario": "陪伴疗愈",
     "scriptList": {
@@ -676,7 +676,7 @@
     "firstFrameImageUrl": "https://cdn.aorizon.com/images/img-1783480681644-6ek7p7b5gx5-origin.png"
   },
   {
-    "id": "be_client_50732002314_s2v_r1652",
+    "id": "sample_script_03",
     "name": "母女客厅温情",
     "scenario": "家庭情感",
     "scriptList": {
@@ -1025,7 +1025,7 @@
     "firstFrameImageUrl": "https://cdn.aorizon.com/images/img-1783480683937-th3we3pack-origin.png"
   },
   {
-    "id": "be_higgsfield_t2v_r1362",
+    "id": "sample_script_04",
     "name": "沙龙理发治愈",
     "scenario": "职场生活",
     "scriptList": {
@@ -1374,7 +1374,7 @@
     "firstFrameImageUrl": "https://cdn.aorizon.com/images/img-1783480682506-jydaovgau9e-origin.png"
   },
   {
-    "id": "be_higgsfield_i2v_r1456",
+    "id": "sample_script_05",
     "name": "书房释怀独白",
     "scenario": "陪伴疗愈",
     "scriptList": {
@@ -1712,7 +1712,7 @@
     "firstFrameImageUrl": "https://cdn.aorizon.com/images/img-1783480682141-y1uvu31x22n-origin.png"
   },
   {
-    "id": "be_aishi_i2v_r40",
+    "id": "sample_script_06",
     "name": "母亲节奇幻礼物",
     "scenario": "家庭情感",
     "scriptList": {
@@ -2061,7 +2061,7 @@
     "firstFrameImageUrl": "https://cdn.aorizon.com/images/img-1783480683015-g0v43wd3w1-origin.png"
   },
   {
-    "id": "be_higgsfield_t2v_r1498",
+    "id": "sample_script_07",
     "name": "晨间车内真心话",
     "scenario": "陪伴疗愈",
     "scriptList": {
@@ -2399,7 +2399,7 @@
     "firstFrameImageUrl": "https://cdn.aorizon.com/images/img-1783480682921-nptxf8qfgff-origin.png"
   },
   {
-    "id": "be_nexgenai_i2v_r749",
+    "id": "sample_script_08",
     "name": "心理医生关怀",
     "scenario": "陪伴疗愈",
     "scriptList": {
@@ -2737,7 +2737,7 @@
     "firstFrameImageUrl": "https://cdn.aorizon.com/images/img-1783480683191-3vcv52porqb-origin.png"
   },
   {
-    "id": "be_higgsfield_i2v_r1448",
+    "id": "sample_script_09",
     "name": "暮色办公室坦白",
     "scenario": "职场生活",
     "scriptList": {
@@ -3075,7 +3075,7 @@
     "firstFrameImageUrl": "https://cdn.aorizon.com/images/img-1783480682816-4b454ho845t-origin.png"
   },
   {
-    "id": "be_aishi_t2v_r159",
+    "id": "sample_script_10",
     "name": "雨夜都市重逢",
     "scenario": "都市剧情",
     "scriptList": {
@@ -3421,7 +3421,7 @@
     "firstFrameImageUrl": "https://cdn.aorizon.com/images/img-1783480684473-dcyqyupefm4-origin.png"
   },
   {
-    "id": "be_aishi_i2v_r137",
+    "id": "sample_script_11",
     "name": "高台跳水与重生",
     "scenario": "动作冒险",
     "scriptList": {
@@ -3755,7 +3755,7 @@
     "firstFrameImageUrl": "https://cdn.aorizon.com/images/img-1783480684188-h614sgq781b-origin.png"
   },
   {
-    "id": "be_higgsfield_t2v_r1489",
+    "id": "sample_script_12",
     "name": "黄纸条穿越城市",
     "scenario": "都市剧情",
     "scriptList": {
@@ -4104,7 +4104,7 @@
     "firstFrameImageUrl": "https://cdn.aorizon.com/images/img-1783480685790-rkb3btvh32m-origin.png"
   },
   {
-    "id": "synthetic_ck3_divination",
+    "id": "sample_script_13",
     "name": "塔罗牌三牌占卜",
     "scenario": "奇幻科幻",
     "scriptList": {

@@ -8,26 +8,36 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cn.happyoyster.opensdk.demo.R
 import cn.happyoyster.opensdk.demo.app.CreateWorldForm
+import cn.happyoyster.opensdk.demo.app.ReferenceImageInput
 import cn.happyoyster.opensdk.demo.app.ScriptListDrafts
 import cn.happyoyster.opensdk.demo.app.ScriptListPreset
 import cn.happyoyster.opensdk.demo.gateway.CameraView
+import cn.happyoyster.opensdk.demo.gateway.MAX_STORY_REFERENCE_IMAGES
 import cn.happyoyster.opensdk.demo.gateway.StoryCreationModel
 import cn.happyoyster.opensdk.demo.gateway.StoryResolution
-import cn.happyoyster.opensdk.demo.gateway.WanderUploadMode
 import cn.happyoyster.opensdk.demo.gateway.WorldKind
 import cn.happyoyster.opensdk.demo.ui.OptionRow
+import cn.happyoyster.opensdk.demo.ui.DemoButton
+import cn.happyoyster.opensdk.demo.ui.DemoCard
+import cn.happyoyster.opensdk.demo.ui.DemoOutlinedButton
+import cn.happyoyster.opensdk.demo.ui.DemoPageHeader
 import cn.happyoyster.opensdk.demo.ui.ScriptListPresetPicker
 import cn.happyoyster.opensdk.demo.ui.SelectButton
 import cn.happyoyster.opensdk.demo.ui.isHttpUrl
@@ -38,48 +48,44 @@ private const val MAX_PROMPT_LENGTH = 2000
 internal fun CreateTab(
     form: CreateWorldForm,
     scriptListPresets: List<ScriptListPreset>,
+    creating: Boolean,
     onFormChange: (CreateWorldForm) -> Unit,
     onCreate: () -> Unit,
 ) {
-    val isScenarioRole = form.worldKind == WorldKind.Wander && form.wanderUploadMode == WanderUploadMode.ScenarioRole
     val isScriptList = form.worldKind == WorldKind.Story && form.storyCreationModel == StoryCreationModel.ScriptList
-    val imageInputValid = form.firstFrameImageUrl.isValidWorldImageInput()
-    val sceneImageInputValid = form.sceneImageUrl.isValidWorldImageInput()
-    val roleImageInputValid = form.roleImageUrl.isValidWorldImageInput()
+    val isSimpleStory = form.worldKind == WorldKind.Story && !isScriptList
+    val referenceImportValidity = remember(form.worldKind, form.storyCreationModel) { mutableStateMapOf<String, Boolean>() }
+    val referencesValid = form.referenceImages.size <= MAX_STORY_REFERENCE_IMAGES && form.referenceImages.all {
+        it.value.isValidWorldImageInput() && referenceImportValidity[it.id] != false
+    }
+    var firstFrameImportValid by remember(form.worldKind, form.storyCreationModel, form.firstFrameImageUrl) { mutableStateOf(true) }
+    val imageInputValid = form.firstFrameImageUrl.isValidWorldImageInput() && firstFrameImportValid
     val promptLength = form.prompt.trim().promptLength()
-    val scenePromptLength = form.scenePrompt.trim().promptLength()
-    val rolePromptLength = form.rolePrompt.trim().promptLength()
     val promptValid = promptLength in 1..MAX_PROMPT_LENGTH
-    val scenarioPromptsValid = scenePromptLength <= MAX_PROMPT_LENGTH && rolePromptLength <= MAX_PROMPT_LENGTH
-    val scenarioHasPrompt = form.scenePrompt.isNotBlank() || form.rolePrompt.isNotBlank()
-    val scenarioHasBothImages = form.sceneImageUrl.isNotBlank() && form.roleImageUrl.isNotBlank()
     val synopsisLength = form.scriptListSynopsis.trim().promptLength()
     val scriptListDraftValid = !isScriptList || ScriptListDrafts.isValidCreateDraft(form.scriptListDraft)
     val canCreate = when {
-        isScenarioRole ->
-            sceneImageInputValid && roleImageInputValid && scenarioPromptsValid &&
-                (scenarioHasPrompt || scenarioHasBothImages)
-        // ScriptList presets provide a default first-frame image URL; users can edit it.
+        form.worldKind == WorldKind.Acting ->
+            promptValid && form.firstFrameImageUrl.isNotBlank() && imageInputValid
         isScriptList ->
             form.scriptListPresetId != null &&
                 synopsisLength in 1..MAX_PROMPT_LENGTH &&
                 scriptListDraftValid &&
                 form.firstFrameImageUrl.isNotBlank() && imageInputValid
-        else -> imageInputValid && promptValid
+        form.worldKind == WorldKind.Wander -> imageInputValid && promptValid && form.firstFrameImageUrl.isNotBlank()
+        else -> referencesValid && promptValid
     }
     Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(stringResource(R.string.create_title), style = MaterialTheme.typography.headlineSmall)
-        Text(
-            text = stringResource(R.string.create_description),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        DemoPageHeader(
+            title = stringResource(R.string.create_title),
+            description = stringResource(R.string.create_description),
         )
-        Card(modifier = Modifier.fillMaxWidth()) {
+        DemoCard(modifier = Modifier.fillMaxWidth()) {
             Column(
-                modifier = Modifier.padding(12.dp),
+                modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 OptionRow(stringResource(R.string.mode_label)) {
@@ -95,25 +101,18 @@ internal fun CreateTab(
                     }
                     SelectButton(stringResource(R.string.mode_story), form.worldKind == WorldKind.Story) {
                         if (form.worldKind != WorldKind.Story) {
-                            onFormChange(form.copy(worldKind = WorldKind.Story).clearScriptListFields())
+                            onFormChange(form.copy(worldKind = WorldKind.Story, storyCreationModel = StoryCreationModel.Simple)
+                                .clearScriptListFields())
+                        }
+                    }
+                    SelectButton(stringResource(R.string.mode_acting), form.worldKind == WorldKind.Acting) {
+                        if (form.worldKind != WorldKind.Acting) {
+                            onFormChange(form.copy(worldKind = WorldKind.Acting, storyCreationModel = StoryCreationModel.Simple)
+                                .clearScriptListFields())
                         }
                     }
                 }
                 if (form.worldKind == WorldKind.Wander) {
-                    OptionRow(stringResource(R.string.upload_mode_label)) {
-                        SelectButton(
-                            stringResource(R.string.upload_first_frame),
-                            form.wanderUploadMode == WanderUploadMode.FirstFrame,
-                        ) {
-                            onFormChange(form.copy(wanderUploadMode = WanderUploadMode.FirstFrame))
-                        }
-                        SelectButton(
-                            stringResource(R.string.upload_scenario_role),
-                            form.wanderUploadMode == WanderUploadMode.ScenarioRole,
-                        ) {
-                            onFormChange(form.copy(wanderUploadMode = WanderUploadMode.ScenarioRole))
-                        }
-                    }
                     OptionRow(stringResource(R.string.camera_label)) {
                         CameraView.entries.forEach { item ->
                             SelectButton(item.labelResource(), form.cameraView == item) {
@@ -122,14 +121,28 @@ internal fun CreateTab(
                         }
                     }
                 }
-                if (form.worldKind == WorldKind.Story) {
-                    OptionRow(stringResource(R.string.resolution_label)) {
-                        StoryResolution.entries.forEach { item ->
-                            SelectButton(item.label, form.resolution == item) {
-                                onFormChange(form.copy(resolution = item))
+                OptionRow(stringResource(R.string.resolution_label)) {
+                    StoryResolution.entries.forEach { item ->
+                        SelectButton(item.label, form.resolution == item) {
+                            onFormChange(form.copy(resolution = item))
+                        }
+                    }
+                }
+                if (form.worldKind == WorldKind.Acting) {
+                    OptionRow(stringResource(R.string.acting_aspect_ratio)) {
+                        SelectButton("9:16", form.actingAspectRatio == "9:16") {
+                            if (form.actingAspectRatio != "9:16") {
+                                onFormChange(form.copy(actingAspectRatio = "9:16", firstFrameImageUrl = ""))
+                            }
+                        }
+                        SelectButton("16:9", form.actingAspectRatio == "16:9") {
+                            if (form.actingAspectRatio != "16:9") {
+                                onFormChange(form.copy(actingAspectRatio = "16:9", firstFrameImageUrl = ""))
                             }
                         }
                     }
+                }
+                if (form.worldKind == WorldKind.Story) {
                     OptionRow(stringResource(R.string.creation_model_label)) {
                         SelectButton(
                             stringResource(R.string.creation_model_simple),
@@ -157,30 +170,24 @@ internal fun CreateTab(
                 }
             }
         }
-    if (isScenarioRole) {
-        Text(
-            text = stringResource(R.string.scenario_role_help),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        ScenarioRoleFields(
-            form = form,
-            scenePromptLength = scenePromptLength,
-            sceneImageInputValid = sceneImageInputValid,
-            rolePromptLength = rolePromptLength,
-            roleImageInputValid = roleImageInputValid,
-            onFormChange = onFormChange,
-        )
-    } else if (isScriptList) {
-        ScriptListFields(
-            form = form,
-            presets = scriptListPresets,
-            synopsisLength = synopsisLength,
-            scriptListDraftValid = scriptListDraftValid,
-            imageInputValid = imageInputValid,
-            onFormChange = onFormChange,
-        )
-    } else {
+        if (isScriptList) {
+            ScriptListFields(
+                form = form,
+                presets = scriptListPresets,
+                synopsisLength = synopsisLength,
+                scriptListDraftValid = scriptListDraftValid,
+                imageInputValid = imageInputValid,
+                onImageImportValidityChange = { firstFrameImportValid = it },
+                onFormChange = onFormChange,
+            )
+        } else {
+            if (form.worldKind == WorldKind.Acting) {
+                Text(
+                    text = stringResource(R.string.acting_create_help_required),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             OutlinedTextField(
                 value = form.prompt,
                 onValueChange = { onFormChange(form.copy(prompt = it)) },
@@ -202,24 +209,79 @@ internal fun CreateTab(
                     )
                 },
             )
-            OutlinedTextField(
-                value = form.firstFrameImageUrl,
-                onValueChange = { onFormChange(form.copy(firstFrameImageUrl = it)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                isError = !imageInputValid,
-                label = { Text(stringResource(R.string.first_frame_image_input_label)) },
-                supportingText = {
-                    Text(stringResource(worldImageInputHintRes(form.firstFrameImageUrl, R.string.first_frame_image_input_optional)))
-                },
-            )
+            if (isSimpleStory) {
+                Text(
+                    stringResource(R.string.story_reference_images_help),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                form.referenceImages.forEachIndexed { index, reference ->
+                    key(reference.id) {
+                        DemoCard(modifier = Modifier.fillMaxWidth()) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Text(stringResource(R.string.story_reference_image_number, index + 1))
+                                WorldImageInput(
+                                    value = reference.value,
+                                    onValueChange = { value ->
+                                        onFormChange(form.copy(referenceImages = form.referenceImages.map {
+                                            if (it.id == reference.id) it.copy(value = value) else it
+                                        }))
+                                    },
+                                    onImportValidityChange = { referenceImportValidity[reference.id] = it },
+                                    isError = !reference.value.isValidWorldImageInput(),
+                                    labelRes = R.string.story_reference_image_label,
+                                    supportingTextRes = worldImageInputHintRes(
+                                        reference.value, R.string.story_reference_image_optional,
+                                    ),
+                                    validateFirstFrameRatio = false,
+                                )
+                                TextButton(onClick = {
+                                    referenceImportValidity.remove(reference.id)
+                                    onFormChange(form.copy(referenceImages = form.referenceImages.filter {
+                                        it.id != reference.id
+                                    }))
+                                }) {
+                                    Text(stringResource(R.string.story_reference_image_remove))
+                                }
+                            }
+                        }
+                    }
+                }
+                DemoOutlinedButton(
+                    onClick = {
+                        onFormChange(form.copy(referenceImages = form.referenceImages + ReferenceImageInput()))
+                    },
+                    enabled = form.referenceImages.size < MAX_STORY_REFERENCE_IMAGES,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.story_reference_image_add))
+                }
+            } else {
+                key(form.worldKind, form.storyCreationModel, form.actingAspectRatio) {
+                    WorldImageInput(
+                        value = form.firstFrameImageUrl,
+                        onValueChange = { onFormChange(form.copy(firstFrameImageUrl = it)) },
+                        onImportValidityChange = { firstFrameImportValid = it },
+                        isError = !imageInputValid || form.firstFrameImageUrl.isBlank(),
+                        labelRes = R.string.first_frame_image_input_label,
+                        supportingTextRes = worldImageInputHintRes(
+                            form.firstFrameImageUrl, R.string.first_frame_image_input_required,
+                        ),
+                        validateFirstFrameRatio = form.worldKind != WorldKind.Acting || form.actingAspectRatio == "16:9",
+                        validatePortraitRatio = form.worldKind == WorldKind.Acting && form.actingAspectRatio == "9:16",
+                    )
+                }
+            }
         }
-        Button(
+        DemoButton(
             onClick = onCreate,
-            enabled = canCreate,
+            enabled = canCreate && !creating,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(stringResource(R.string.create_world_button))
+            Text(stringResource(if (creating) R.string.create_world_in_progress else R.string.create_world_button))
         }
     }
 }
@@ -231,6 +293,7 @@ private fun ScriptListFields(
     synopsisLength: Int,
     scriptListDraftValid: Boolean,
     imageInputValid: Boolean,
+    onImageImportValidityChange: (Boolean) -> Unit,
     onFormChange: (CreateWorldForm) -> Unit,
 ) {
     Text(
@@ -265,24 +328,18 @@ private fun ScriptListFields(
             Text(stringResource(R.string.characters_count_required, synopsisLength, MAX_PROMPT_LENGTH))
         },
     )
-    OutlinedTextField(
+    WorldImageInput(
         value = form.firstFrameImageUrl,
         onValueChange = { onFormChange(form.copy(firstFrameImageUrl = it)) },
-        modifier = Modifier.fillMaxWidth(),
-        singleLine = true,
+        onImportValidityChange = onImageImportValidityChange,
         isError = form.firstFrameImageUrl.isBlank() || !imageInputValid,
-        label = { Text(stringResource(R.string.first_frame_image_input_label)) },
-        supportingText = {
-            Text(
-                stringResource(
-                    if (form.firstFrameImageUrl.isBlank()) {
-                        R.string.script_list_first_frame_required
-                    } else {
-                        worldImageInputHintRes(form.firstFrameImageUrl, R.string.script_list_first_frame_editable)
-                    },
-                ),
-            )
+        labelRes = R.string.first_frame_image_input_label,
+        supportingTextRes = if (form.firstFrameImageUrl.isBlank()) {
+            R.string.first_frame_image_input_required
+        } else {
+            worldImageInputHintRes(form.firstFrameImageUrl, R.string.script_list_first_frame_editable)
         },
+        validateFirstFrameRatio = true,
     )
     OutlinedTextField(
         value = form.scriptListDraft,
@@ -304,61 +361,6 @@ private fun ScriptListFields(
                     },
                 ),
             )
-        },
-    )
-}
-
-@Composable
-private fun ScenarioRoleFields(
-    form: CreateWorldForm,
-    scenePromptLength: Int,
-    sceneImageInputValid: Boolean,
-    rolePromptLength: Int,
-    roleImageInputValid: Boolean,
-    onFormChange: (CreateWorldForm) -> Unit,
-) {
-    OutlinedTextField(
-        value = form.scenePrompt,
-        onValueChange = { onFormChange(form.copy(scenePrompt = it)) },
-        modifier = Modifier.fillMaxWidth(),
-        minLines = 2,
-        isError = scenePromptLength > MAX_PROMPT_LENGTH,
-        label = { Text(stringResource(R.string.scene_prompt_label)) },
-        supportingText = {
-            Text(stringResource(R.string.characters_count_limit, scenePromptLength, MAX_PROMPT_LENGTH))
-        },
-    )
-    OutlinedTextField(
-        value = form.sceneImageUrl,
-        onValueChange = { onFormChange(form.copy(sceneImageUrl = it)) },
-        modifier = Modifier.fillMaxWidth(),
-        singleLine = true,
-        isError = !sceneImageInputValid,
-        label = { Text(stringResource(R.string.scene_image_input_label)) },
-        supportingText = {
-            Text(stringResource(worldImageInputHintRes(form.sceneImageUrl, R.string.scenario_image_input_optional)))
-        },
-    )
-    OutlinedTextField(
-        value = form.rolePrompt,
-        onValueChange = { onFormChange(form.copy(rolePrompt = it)) },
-        modifier = Modifier.fillMaxWidth(),
-        minLines = 2,
-        isError = rolePromptLength > MAX_PROMPT_LENGTH,
-        label = { Text(stringResource(R.string.role_prompt_label)) },
-        supportingText = {
-            Text(stringResource(R.string.characters_count_limit, rolePromptLength, MAX_PROMPT_LENGTH))
-        },
-    )
-    OutlinedTextField(
-        value = form.roleImageUrl,
-        onValueChange = { onFormChange(form.copy(roleImageUrl = it)) },
-        modifier = Modifier.fillMaxWidth(),
-        singleLine = true,
-        isError = !roleImageInputValid,
-        label = { Text(stringResource(R.string.role_image_input_label)) },
-        supportingText = {
-            Text(stringResource(worldImageInputHintRes(form.roleImageUrl, R.string.scenario_image_input_optional)))
         },
     )
 }

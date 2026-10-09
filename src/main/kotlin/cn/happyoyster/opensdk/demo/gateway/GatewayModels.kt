@@ -15,14 +15,19 @@ import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonNames
 import kotlinx.serialization.json.JsonPrimitive
 
-internal enum class WorldKind(val serverMode: Int) {
-    Wander(1),
-    Story(2),
+internal enum class WorldKind(val serverMode: Int, val worldMode: String) {
+    Wander(1, "wander"),
+    Story(2, "story"),
+    Acting(3, "acting"),
 }
 
-internal enum class WanderUploadMode(val wireValue: String) {
-    FirstFrame("first_frame"),
-    ScenarioRole("scenario_role"),
+internal const val MAX_STORY_REFERENCE_IMAGES = 6
+
+internal fun String?.toWorldKindOrNull(): WorldKind? = when (this?.trim()?.lowercase()) {
+    "1", "wander", "adventure" -> WorldKind.Wander
+    "2", "story", "direct", "directing" -> WorldKind.Story
+    "3", "acting" -> WorldKind.Acting
+    else -> null
 }
 
 internal enum class CameraView(val wireValue: String) {
@@ -55,16 +60,13 @@ internal data class CreateWorldRequest(
     val perspective: String? = null,
     val uploadMode: String? = null,
     val firstFrameImage: DemoImageRef? = null,
-    val sceneImage: DemoImageRef? = null,
-    val scenePrompt: String? = null,
-    val roleImage: DemoImageRef? = null,
-    val rolePrompt: String? = null,
     val inputImages: List<DemoImageRef>? = null,
     val resolution: String? = null,
     val layout: String? = null,
     val narrative: String? = null,
     val creationModel: String? = null,
     val scriptList: ScriptListPayload? = null,
+    val aspectRatio: String? = null,
     val userAgent: String,
 )
 
@@ -128,6 +130,8 @@ internal data class DemoWorld(
     val name: String? = null,
     val title: String? = null,
     val status: String = "unknown",
+    val errorCode: String? = null,
+    val errorMessage: String? = null,
     @Serializable(with = WorldModeSerializer::class)
     val mode: String = "unknown",
     val prompt: String? = null,
@@ -155,6 +159,7 @@ internal data class DemoWorld(
         "directing" -> "Story"
         "story" -> "Story"
         "wander" -> "Wander"
+        "acting" -> "Acting"
         else -> "Unknown"
     }
     val imageUrl: String?
@@ -228,6 +233,12 @@ internal data class DemoMediaVariant(
 @Serializable
 internal data class WorldsPage(
     val items: List<DemoWorld> = emptyList(),
+    val pagination: PageInfo? = null,
+)
+
+@Serializable
+internal data class PageInfo(
+    val hasMore: Boolean = false,
 )
 
 @Serializable
@@ -247,6 +258,8 @@ internal data class DemoTravel(
     val encryptedTravelId: String,
     val encryptedWorldId: String? = null,
     val status: String? = null,
+    val errorCode: String? = null,
+    val errorMessage: String? = null,
     @Serializable(with = WorldModeSerializer::class)
     val mode: String? = null,
     val durationSec: Int? = null,
@@ -258,6 +271,7 @@ internal data class DemoTravel(
 @Serializable
 internal data class TravelsPage(
     val items: List<DemoTravel> = emptyList(),
+    val pagination: PageInfo? = null,
 )
 
 @Serializable
@@ -289,6 +303,7 @@ private object WorldModeSerializer : KSerializer<String> {
         return when (raw.trim().lowercase()) {
             "1", "wander", "adventure" -> "wander"
             "2", "story", "direct", "directing" -> "story"
+            "3", "acting" -> "acting"
             else -> raw
         }
     }
@@ -303,7 +318,9 @@ internal fun DemoWorld.mergeFrom(incoming: DemoWorld): DemoWorld =
         name = incoming.name ?: name,
         title = incoming.title ?: title,
         status = incoming.status.takeUnless { it.isBlank() || it == "unknown" } ?: status,
-        mode = incoming.mode.takeUnless { it == "unknown" } ?: mode,
+        errorCode = incoming.errorCode ?: errorCode,
+        errorMessage = incoming.errorMessage ?: errorMessage,
+        mode = incoming.mode.takeIf { it.toWorldKindOrNull() != null } ?: mode,
         prompt = incoming.prompt ?: prompt,
         firstFrame = incoming.firstFrame ?: firstFrame,
         firstFrameImageUrl = incoming.firstFrameImageUrl ?: firstFrameImageUrl,

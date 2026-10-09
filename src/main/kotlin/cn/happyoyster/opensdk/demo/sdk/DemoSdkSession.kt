@@ -22,11 +22,12 @@ internal fun Throwable.isTravelBusyError(): Boolean =
 internal class DemoSdkSession(
     private val context: Context,
 ) {
-    fun initialize(sdkApiHost: String, token: String) {
+    fun initialize(sdkApiHost: String, model: String, token: String) {
         HappyOyster.initialize(
             context.applicationContext,
             SDKConfig(
                 apiHost = sdkApiHost,
+                model = model,
                 logLevel = LogLevel.DEBUG,
                 logcatEnabled = true,
             ),

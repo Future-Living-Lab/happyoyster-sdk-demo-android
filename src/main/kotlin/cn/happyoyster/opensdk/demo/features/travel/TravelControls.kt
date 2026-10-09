@@ -13,12 +13,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -46,18 +44,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.text.KeyboardOptions
 import cn.happyoyster.opensdk.AdventureCommand
 import cn.happyoyster.opensdk.CreationModelValue
 import cn.happyoyster.opensdk.ModeValue
 import cn.happyoyster.opensdk.TravelStatusValue
 import cn.happyoyster.opensdk.demo.R
 import cn.happyoyster.opensdk.demo.app.ActiveTravel
+import cn.happyoyster.opensdk.demo.app.DemoTravelTransition
 import cn.happyoyster.opensdk.demo.app.ScriptListDrafts
 import cn.happyoyster.opensdk.demo.app.ScriptListPreset
+import cn.happyoyster.opensdk.demo.ui.DemoButton
+import cn.happyoyster.opensdk.demo.ui.DemoCard
+import cn.happyoyster.opensdk.demo.ui.DemoOutlinedButton
 import cn.happyoyster.opensdk.demo.ui.ScriptListPresetPicker
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withTimeoutOrNull
 
 private enum class AdventureCommandDimension {
     Translation,
@@ -160,6 +161,8 @@ internal fun TravelControls(
     travel: ActiveTravel,
     status: TravelStatusValue?,
     pausing: Boolean,
+    transition: DemoTravelTransition,
+    recovering: Boolean,
     ending: Boolean,
     capHeight: Boolean = true,
     directingInstruct: String,
@@ -181,7 +184,14 @@ internal fun TravelControls(
     onEnd: () -> Unit,
 ) {
     val isDirecting = travel.data.mode == ModeValue.Directing
-    Card(
+    val isActing = travel.data.mode == ModeValue.Acting
+    val isInstructable = isDirecting || isActing
+    val supportsPauseResume = when {
+        isDirecting -> travel.data.version.trim().equals("storyV2", ignoreCase = true)
+        isActing -> travel.data.version.trim().equals("actingV2", ignoreCase = true)
+        else -> false
+    }
+    DemoCard(
         modifier = modifier
             .fillMaxWidth()
             .then(if (capHeight) Modifier.heightIn(max = 300.dp) else Modifier),
@@ -199,13 +209,16 @@ internal fun TravelControls(
             )
             Text(
                 "${stringResource(R.string.travel_mode, travel.data.mode.rawValue)} · " +
-                    stringResource(R.string.travel_status, travelStatusText(pausing, status)),
+                    stringResource(R.string.travel_status, travelStatusText(pausing, recovering, status)),
             )
-            if (isDirecting) {
+            if (transition.uncertain) {
+                Text(stringResource(R.string.travel_transition_uncertain))
+            }
+            if (isInstructable) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
+                    DemoButton(
                         onClick = onPause,
-                        enabled = status == TravelStatusValue.Running && !pausing,
+                        enabled = supportsPauseResume && !ending && transition.canStart(DemoTravelTransition.Operation.Pause, status),
                         modifier = Modifier.weight(1f),
                     ) {
                         Text(
@@ -214,18 +227,23 @@ internal fun TravelControls(
                             ),
                         )
                     }
-                    Button(
+                    DemoButton(
                         onClick = onResume,
-                        enabled = status == TravelStatusValue.Paused,
+                        enabled = supportsPauseResume && !ending && transition.canStart(DemoTravelTransition.Operation.Resume, status),
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text(stringResource(R.string.resume))
+                        Text(stringResource(
+                            if (transition.operation == DemoTravelTransition.Operation.Resume) {
+                                R.string.travel_status_recovering
+                            } else R.string.resume,
+                        ))
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (isDirecting) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val rewindSecValid = rewindToSec.isValidRewindToSecInput()
                     OutlinedTextField(
                         value = rewindToSec,
+                        enabled = transition.operation == null,
                         onValueChange = onRewindChange,
                         modifier = Modifier.weight(1f),
                         label = { Text(stringResource(R.string.rewind_sec)) },
@@ -234,11 +252,15 @@ internal fun TravelControls(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         supportingText = { Text(stringResource(R.string.rewind_sec_hint)) },
                     )
-                    Button(
+                    DemoButton(
                         onClick = onRewind,
-                        enabled = status == TravelStatusValue.Paused && rewindSecValid,
+                        enabled = supportsPauseResume && !ending && rewindSecValid && transition.canStart(DemoTravelTransition.Operation.Rewind, status),
                     ) {
-                        Text(stringResource(R.string.rewind))
+                        Text(stringResource(
+                            if (transition.operation == DemoTravelTransition.Operation.Rewind) {
+                                R.string.travel_status_recovering
+                            } else R.string.rewind,
+                        ))
                     }
                 }
             }
@@ -247,9 +269,8 @@ internal fun TravelControls(
                     enabled = status == TravelStatusValue.Running && !ending,
                     onCommand = onCommand,
                 )
-            } else if (travel.data.creationModel == CreationModelValue.ScriptList) {
-                // ScriptList worlds do not accept instruct; the script is
-                // replaced as a whole (exactly 45 turns) via update-script.
+            } else if (isDirecting && travel.data.creationModel == CreationModelValue.ScriptList) {
+                // ScriptList replaces all 45 acts through update-script.
                 Text(
                     text = stringResource(R.string.script_list_instruct_disabled),
                     style = MaterialTheme.typography.bodySmall,
@@ -289,7 +310,7 @@ internal fun TravelControls(
                         )
                     },
                 )
-                Button(
+                DemoButton(
                     onClick = onUpdateScript,
                     enabled = updateDraftValid &&
                         !updatingScript &&
@@ -302,7 +323,7 @@ internal fun TravelControls(
                         ),
                     )
                 }
-            } else {
+            } else if (isInstructable) {
                 OutlinedTextField(
                     value = directingInstruct,
                     onValueChange = onInstructChange,
@@ -310,16 +331,17 @@ internal fun TravelControls(
                     minLines = 2,
                     label = { Text(stringResource(R.string.directing_instruct)) },
                 )
-                Button(
+                DemoButton(
                     onClick = onSendInstruct,
-                    enabled = directingInstruct.isNotBlank(),
+                    enabled = !pausing && !recovering && !ending && directingInstruct.isNotBlank() &&
+                        (status == TravelStatusValue.Running || status == TravelStatusValue.Paused),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(stringResource(R.string.send_instruct))
                 }
             }
             Spacer(Modifier.height(2.dp))
-            OutlinedButton(
+            DemoOutlinedButton(
                 onClick = onEnd,
                 enabled = !ending,
                 modifier = Modifier.fillMaxWidth(),
@@ -652,9 +674,10 @@ private fun TapOrHoldButton(
 }
 
 @Composable
-private fun travelStatusText(pausing: Boolean, status: TravelStatusValue?): String =
+private fun travelStatusText(pausing: Boolean, recovering: Boolean, status: TravelStatusValue?): String =
     when {
         pausing -> stringResource(R.string.travel_status_pausing)
+        recovering -> stringResource(R.string.travel_status_recovering)
         status == null -> stringResource(R.string.travel_status_init)
         else -> status.rawValue
     }

@@ -1,0 +1,4 @@
+<resources>
+    <string name="travel_transition_uncertain">操作结果仍在确认中，请等待状态更新，或结束体验。</string>
+    <string name="travel_retry">重试</string>
+</resources>

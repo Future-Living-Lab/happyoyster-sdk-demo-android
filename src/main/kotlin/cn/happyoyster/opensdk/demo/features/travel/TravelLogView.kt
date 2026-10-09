@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -29,6 +28,7 @@ import cn.happyoyster.opensdk.demo.R
 import cn.happyoyster.opensdk.demo.app.SdkDemoLog
 import cn.happyoyster.opensdk.demo.app.SdkDemoLogEntry
 import cn.happyoyster.opensdk.demo.app.SdkDemoLogKind
+import cn.happyoyster.opensdk.demo.ui.DemoCard
 
 @Composable
 internal fun TravelLogView(
@@ -43,7 +43,7 @@ internal fun TravelLogView(
             listState.animateScrollToItem(SdkDemoLog.entries.lastIndex)
         }
     }
-    Card(modifier = modifier) {
+    DemoCard(modifier = modifier) {
         Column(Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier

@@ -12,12 +12,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -27,8 +24,10 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -37,25 +36,40 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
-import coil.size.Precision
-import coil.size.Scale
 import cn.happyoyster.opensdk.demo.R
 import cn.happyoyster.opensdk.demo.app.SdkDemoLog
 import cn.happyoyster.opensdk.demo.app.SdkDemoLogKind
 import cn.happyoyster.opensdk.demo.config.SdkDemoLanguage
 import cn.happyoyster.opensdk.demo.gateway.DemoWorld
 import cn.happyoyster.opensdk.demo.ui.ErrorBanner
+import cn.happyoyster.opensdk.demo.ui.OpenApiFailureKind
+import cn.happyoyster.opensdk.demo.ui.OpenApiFailureReason
+import cn.happyoyster.opensdk.demo.ui.DemoButton
+import cn.happyoyster.opensdk.demo.ui.DemoCard
 import cn.happyoyster.opensdk.demo.ui.SdkDemoSuccessColor
+import cn.happyoyster.opensdk.demo.ui.DemoListControls
+import cn.happyoyster.opensdk.demo.ui.DemoModeFilter
+import cn.happyoyster.opensdk.demo.ui.DemoOutlinedButton
+import cn.happyoyster.opensdk.demo.ui.DemoPageHeader
+import cn.happyoyster.opensdk.demo.ui.DemoTimeOrder
 import cn.happyoyster.opensdk.demo.ui.StatusBadge
+import cn.happyoyster.opensdk.demo.ui.filterAndSortDemoRecords
 import cn.happyoyster.opensdk.demo.ui.readableSdkDemoDateTime
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import coil.size.Precision
+import coil.size.Scale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun PlayTab(
     errorMessage: String?,
+    onDismissError: () -> Unit,
     worlds: List<DemoWorld>,
+    modeFilter: DemoModeFilter,
+    timeOrder: DemoTimeOrder,
+    onModeFilterChange: (DemoModeFilter) -> Unit,
+    onTimeOrderChange: (DemoTimeOrder) -> Unit,
     language: SdkDemoLanguage,
     coverRefreshKey: Int,
     loadingCoverWorldIds: Set<String>,
@@ -65,6 +79,14 @@ internal fun PlayTab(
     onDelete: (DemoWorld) -> Unit,
     onLoadCover: (DemoWorld) -> Unit,
 ) {
+    val displayedRecords = remember(worlds, modeFilter, timeOrder) {
+        worlds.filterAndSortDemoRecords(
+            filter = modeFilter,
+            order = timeOrder,
+            mode = { it.mode },
+            time = { it.createdAt },
+        )
+    }
     val listState = rememberLazyListState()
     val loadedCoverIds = remember { mutableStateMapOf<String, Boolean>() }
     val worldsById = remember(worlds) { worlds.associateBy { it.encryptedWorldId } }
@@ -87,7 +109,7 @@ internal fun PlayTab(
                 .toSet()
         }
     }
-    LaunchedEffect(refreshing) {
+    LaunchedEffect(refreshing, modeFilter, timeOrder) {
         if (!refreshing) {
             listState.scrollToItem(0)
         }
@@ -103,13 +125,12 @@ internal fun PlayTab(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(stringResource(R.string.play_title), style = MaterialTheme.typography.headlineSmall)
-        Text(
-            text = stringResource(R.string.play_description),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        DemoPageHeader(
+            title = stringResource(R.string.play_title),
+            description = stringResource(R.string.play_description),
         )
-        ErrorBanner(errorMessage)
+        ErrorBanner(errorMessage, onDismissError)
+        DemoListControls(modeFilter, timeOrder, onModeFilterChange, onTimeOrderChange)
         PullToRefreshBox(
             isRefreshing = refreshing,
             onRefresh = onRefresh,
@@ -123,12 +144,12 @@ internal fun PlayTab(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer { translationY = contentTranslationY },
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                if (worlds.isEmpty()) {
-                    item { EmptyWorldsCard() }
+                if (displayedRecords.isEmpty() && !refreshing) {
+                    item { EmptyWorldsCard(filtered = modeFilter != DemoModeFilter.All) }
                 }
-                items(worlds, key = { it.encryptedWorldId }) { world ->
+                items(displayedRecords, key = { it.encryptedWorldId }) { world ->
                     WorldCard(
                         world = world,
                         language = language,
@@ -154,12 +175,12 @@ private const val CoverImageHeightPx = 315
 private const val MaxConcurrentCoverLoads = 2
 
 @Composable
-private fun EmptyWorldsCard() {
-    Card(modifier = Modifier.fillMaxWidth()) {
+private fun EmptyWorldsCard(filtered: Boolean) {
+    DemoCard(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(stringResource(R.string.no_worlds_title), fontWeight = FontWeight.SemiBold)
+            Text(stringResource(if (filtered) R.string.list_no_matches else R.string.no_worlds_title), fontWeight = FontWeight.SemiBold)
             Text(
-                stringResource(R.string.no_worlds_description),
+                stringResource(if (filtered) R.string.list_try_another_mode else R.string.no_worlds_description),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -184,21 +205,26 @@ private fun WorldCard(
     LaunchedEffect(world.encryptedWorldId, imageUrl, coverRefreshKey, shouldLoadCover) {
         if (shouldLoadCover && imageUrl.isNullOrBlank()) onLoadCover()
     }
-    Card(
+    DemoCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(world.displayName ?: stringResource(R.string.world_generating_title), fontWeight = FontWeight.SemiBold)
+                Text(
+                    world.displayName ?: stringResource(R.string.world_generating_title),
+                    modifier = Modifier.weight(1f).padding(end = 8.dp),
+                    style = MaterialTheme.typography.titleMedium,
+                )
                 WorldStatusBadge(world.status)
             }
             val imageModifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 7f)
+                .clip(MaterialTheme.shapes.small)
             Box(
                 modifier = imageModifier
                     .fillMaxWidth()
@@ -246,12 +272,22 @@ private fun WorldCard(
                     CircularProgressIndicator()
                 }
             }
-            Text("${world.localizedModeLabel()} · ${world.createdAt.readableSdkDemoDateTime(language)}")
+            Text(
+                "${world.localizedModeLabel()} · ${world.createdAt.readableSdkDemoDateTime(language)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (world.status.equals("failed", ignoreCase = true)) {
+                OpenApiFailureReason(
+                    kind = OpenApiFailureKind.World,
+                    errorCode = world.errorCode,
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onStart, enabled = world.isReady, modifier = Modifier.weight(1f)) {
+                DemoButton(onClick = onStart, enabled = world.isReady, modifier = Modifier.weight(1f)) {
                     Text(stringResource(R.string.start_travel))
                 }
-                OutlinedButton(onClick = onDelete) { Text(stringResource(R.string.delete)) }
+                DemoOutlinedButton(onClick = onDelete) { Text(stringResource(R.string.delete)) }
             }
         }
     }
@@ -276,5 +312,6 @@ private fun DemoWorld.localizedModeLabel(): String =
     when (modeLabel) {
         "Story" -> stringResource(R.string.mode_story)
         "Wander" -> stringResource(R.string.mode_wander)
+        "Acting" -> stringResource(R.string.mode_acting)
         else -> stringResource(R.string.mode_unknown)
     }

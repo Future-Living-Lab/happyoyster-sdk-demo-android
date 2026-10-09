@@ -4,58 +4,82 @@ import android.content.Context
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.LocaleList
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cn.happyoyster.opensdk.SDKError
 import cn.happyoyster.opensdk.demo.R
 import cn.happyoyster.opensdk.demo.config.SdkDemoLanguage
+import cn.happyoyster.opensdk.demo.gateway.DemoGatewayException
 import cn.happyoyster.opensdk.demo.gateway.DemoWorld
 import cn.happyoyster.opensdk.demo.gateway.mergeFrom
+import cn.happyoyster.opensdk.demo.sdk.travelFailureCode
 
 @Composable
 internal fun OptionRow(label: String, content: @Composable RowScope.() -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(label, fontWeight = FontWeight.SemiBold)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), content = content)
+        Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            content = content,
+        )
     }
 }
 
 @Composable
 internal fun SelectButton(label: String, selected: Boolean, onClick: () -> Unit) {
-    if (selected) {
-        Button(onClick = onClick) { Text(label) }
-    } else {
-        OutlinedButton(onClick = onClick) { Text(label) }
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.heightIn(min = 48.dp).semantics { this.selected = selected },
+        shape = MaterialTheme.shapes.small,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+        contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f) else MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Box(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
+        }
     }
 }
 
 /** Green used for success-like statuses (world ready / travel completed). */
-internal val SdkDemoSuccessColor = Color(0xFF2E7D32)
+internal val SdkDemoSuccessColor = Color(0xFF237B60)
 
 /** Rounded status pill shared by the world and travel lists. */
 @Composable
 internal fun StatusBadge(label: String, color: Color) {
     Surface(
-        color = color.copy(alpha = 0.12f),
+        color = color.copy(alpha = 0.08f),
         contentColor = color,
         shape = MaterialTheme.shapes.large,
     ) {
         Text(
             text = label,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
             fontWeight = FontWeight.SemiBold,
             style = MaterialTheme.typography.labelMedium,
         )
@@ -70,6 +94,10 @@ internal fun List<DemoWorld>.replaceWorld(world: DemoWorld): List<DemoWorld> =
     }
 
 internal fun SDKError.sdkDemoMessage(context: Context): String {
+    travelFailureCode()?.let { failureCode ->
+        val summary = context.getString(openApiFailureReasonRes(OpenApiFailureKind.Travel, failureCode))
+        return context.getString(R.string.gateway_error_with_code, summary, failureCode)
+    }
     val summaryResId = when (code) {
         101001 -> R.string.sdk_error_invalid_token
         103001 -> R.string.sdk_error_no_active_travel
@@ -89,6 +117,46 @@ internal fun SDKError.sdkDemoMessage(context: Context): String {
     }
     return summaryResId?.let(context::getString)
         ?: context.getString(R.string.sdk_error_unknown, code)
+}
+
+/** Converts gateway failures into concise, actionable UI copy without exposing raw response bodies. */
+internal fun DemoGatewayException.sdkDemoMessage(context: Context): String {
+    val reason = when {
+        code != null -> message?.substringAfter(": ", missingDelimiterValue = "")
+        !errorCode.isNullOrBlank() -> message?.substringAfter(": ", missingDelimiterValue = "")
+        else -> null
+    }
+        ?.replace(Regex("\\s+"), " ")
+        ?.trim()
+        ?.take(300)
+        .orEmpty()
+
+    val summary = when {
+        code == 403003 || reason.contains("main API Key", ignoreCase = true) ->
+            context.getString(R.string.gateway_error_main_api_key)
+        reason.contains("firstFrameImage.base64", ignoreCase = true) &&
+            reason.contains("not a valid image", ignoreCase = true) ->
+            context.getString(R.string.gateway_error_invalid_first_frame)
+        reason.contains("must be portrait", ignoreCase = true) ->
+            context.getString(R.string.gateway_error_portrait_aspect_ratio)
+        reason.contains("must be landscape", ignoreCase = true) ||
+            reason.contains("aspect ratio", ignoreCase = true) ->
+            context.getString(R.string.gateway_error_first_frame_aspect_ratio)
+        reason.contains("base64", ignoreCase = true) &&
+            (reason.contains("malformed", ignoreCase = true) ||
+                reason.contains("invalid", ignoreCase = true) ||
+                reason.contains("empty", ignoreCase = true)) ->
+            context.getString(R.string.gateway_error_invalid_base64)
+        reason.contains("exceeds maximum decoded size", ignoreCase = true) ->
+            context.getString(R.string.gateway_error_image_too_large)
+        reason.contains("not a valid image", ignoreCase = true) ->
+            context.getString(R.string.gateway_error_invalid_image)
+        else -> context.getString(R.string.gateway_error_generic)
+    }
+    val identifier = code?.toString() ?: errorCode?.takeIf { it.matches(Regex("[A-Za-z0-9_]{1,128}")) }
+    return identifier?.let {
+        context.getString(R.string.gateway_error_with_code, summary, it)
+    } ?: summary
 }
 
 internal fun Context.withSdkDemoLanguage(language: SdkDemoLanguage): Context {

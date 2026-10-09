@@ -1,0 +1,4 @@
+<resources>
+    <string name="travel_transition_uncertain">The result is still being confirmed. Wait for a status update or end the experience.</string>
+    <string name="travel_retry">Retry</string>
+</resources>

@@ -11,7 +11,18 @@ internal data class SdkDemoConfig(
     val token: String,
     val tokenExpiresAtSec: Long,
     val language: SdkDemoLanguage,
-)
+) {
+    fun modelForMode(worldMode: String): String? = when (worldMode.trim().lowercase(Locale.ROOT)) {
+        "1", "wander", "adventure" -> ADVENTURE_MODEL
+        "2", "story", "direct", "directing" -> DIRECTING_MODEL
+        "3", "acting" -> ACTING_MODEL
+        else -> null
+    }
+}
+
+private const val ADVENTURE_MODEL = "happyoyster-1.0-adventure"
+private const val DIRECTING_MODEL = "happyoyster-1.0-directing"
+private const val ACTING_MODEL = "happyoyster-1.0-acting"
 
 internal enum class SdkDemoLanguage(val storageValue: String) {
     Chinese("zh"),
@@ -41,16 +52,12 @@ internal class SdkDemoConfigStore(context: Context) {
         prefs.edit()
             .putString(KEY_GATEWAY_BASE_URL, config.gatewayBaseUrl)
             .putString(KEY_SDK_API_HOST, config.sdkApiHost)
+            .remove(KEY_ADVENTURE_MODEL)
+            .remove(KEY_DIRECTING_MODEL)
+            .remove(KEY_ACTING_MODEL)
             .putString(KEY_TOKEN, config.token)
             .putLong(KEY_TOKEN_EXPIRES_AT_SEC, config.tokenExpiresAtSec)
             .putString(KEY_LANGUAGE, config.language.storageValue)
-            .apply()
-    }
-
-    fun clearToken() {
-        prefs.edit()
-            .remove(KEY_TOKEN)
-            .remove(KEY_TOKEN_EXPIRES_AT_SEC)
             .apply()
     }
 
@@ -58,6 +65,9 @@ internal class SdkDemoConfigStore(context: Context) {
         private const val PREFS_NAME = "happy_oyster_sdk_demo"
         private const val KEY_GATEWAY_BASE_URL = "gateway_base_url"
         private const val KEY_SDK_API_HOST = "sdk_api_host"
+        private const val KEY_ADVENTURE_MODEL = "adventure_model"
+        private const val KEY_DIRECTING_MODEL = "directing_model"
+        private const val KEY_ACTING_MODEL = "acting_model"
         private const val KEY_TOKEN = "token"
         private const val KEY_TOKEN_EXPIRES_AT_SEC = "token_expires_at_sec"
         private const val KEY_LANGUAGE = "language"

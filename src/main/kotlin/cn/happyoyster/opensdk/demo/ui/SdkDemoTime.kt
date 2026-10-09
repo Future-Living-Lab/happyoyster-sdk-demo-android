@@ -45,15 +45,13 @@ private fun SdkDemoLanguage.sdkDemoTimeZone(): TimeZone =
         },
     )
 
-private fun parseServerDateTime(raw: String): Date? {
+internal fun parseServerDateTime(raw: String): Date? {
     raw.toLongOrNull()?.let { timestamp ->
         return Date(if (raw.length >= 13) timestamp else timestamp * 1000L)
     }
-    val candidates = listOf(raw, raw.withMillisPrecision()).distinct()
-    for (candidate in candidates) {
-        for (pattern in SERVER_DATE_PATTERNS) {
-            parseDate(pattern, candidate)?.let { return it }
-        }
+    val candidate = raw.withMillisPrecision()
+    for (pattern in SERVER_DATE_PATTERNS) {
+        parseDate(pattern, candidate)?.let { return it }
     }
     return null
 }
@@ -65,8 +63,8 @@ private fun String.withMillisPrecision(): String {
     val fractionEnd = indexOfFirstAfter(fractionStart) { !it.isDigit() }
         .let { if (it < 0) length else it }
     val fraction = substring(fractionStart, fractionEnd)
-    if (fraction.length <= 3) return this
-    val millis = fraction.take(3)
+    if (fraction.isEmpty()) return this
+    val millis = fraction.take(3).padEnd(3, '0')
     return substring(0, fractionStart) + millis + substring(fractionEnd)
 }
 

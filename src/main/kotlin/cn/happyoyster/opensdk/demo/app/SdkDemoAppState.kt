@@ -25,7 +25,7 @@ import cn.happyoyster.opensdk.demo.gateway.ScriptListPayload
 import cn.happyoyster.opensdk.demo.gateway.StoryCreationModel
 import cn.happyoyster.opensdk.demo.gateway.TravelArtifacts
 import cn.happyoyster.opensdk.demo.gateway.WorldKind
-import cn.happyoyster.opensdk.demo.gateway.mergeFrom
+import cn.happyoyster.opensdk.demo.gateway.toWorldKindOrNull
 import cn.happyoyster.opensdk.demo.gateway.withFirstFrame
 import cn.happyoyster.opensdk.demo.sdk.DemoSdkSession
 import cn.happyoyster.opensdk.demo.sdk.isTravelBusyError
@@ -34,9 +34,13 @@ import cn.happyoyster.opensdk.demo.ui.isHttpUrl
 import cn.happyoyster.opensdk.demo.ui.sdkDemoMessage
 import cn.happyoyster.opensdk.demo.ui.replaceWorld
 import cn.happyoyster.opensdk.demo.ui.withSdkDemoLanguage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
@@ -88,6 +92,8 @@ internal class SdkDemoAppState(
         private set
     var artifactPendingTravelIds by mutableStateOf<Set<String>>(emptySet())
         private set
+    var artifactFailedTravelIds by mutableStateOf<Set<String>>(emptySet())
+        private set
     var artifactRefreshKey by mutableStateOf(0)
         private set
     var worldDetailsById by mutableStateOf<Map<String, DemoWorld>>(emptyMap())
@@ -97,7 +103,13 @@ internal class SdkDemoAppState(
         private set
     var travelStatus by mutableStateOf<TravelStatusValue?>(null)
         private set
-    var pausing by mutableStateOf(false)
+    var travelTransition by mutableStateOf(DemoTravelTransition())
+        private set
+    val pausing: Boolean get() = travelTransition.operation == DemoTravelTransition.Operation.Pause
+    val recovering: Boolean get() = travelTransition.operation in setOf(
+        DemoTravelTransition.Operation.Resume, DemoTravelTransition.Operation.Rewind,
+    )
+    var creatingWorld by mutableStateOf(false)
         private set
     var endingTravel by mutableStateOf(false)
         private set
@@ -120,10 +132,16 @@ internal class SdkDemoAppState(
     }
 
     private var startingTravel = false
+    private var awaitingFailureDetail = false
+    private val worldBuildJobs = mutableMapOf<String, Job>()
+    private val retainedCreatedWorldIds = mutableSetOf<String>()
+    private var gatewayEpoch = 0L
     private var coverRequestedWorldIds by mutableStateOf<Set<String>>(emptySet())
     private var artifactRequestedTravelIds by mutableStateOf<Set<String>>(emptySet())
+    private val inaccessibleWorldDetailIds = mutableSetOf<String>()
     private val downloadIds = mutableSetOf<Long>()
     private val coverRequestLimiter = Semaphore(permits = 2)
+    private val worldDetailRequestLimiter = Semaphore(permits = 4)
     private var sdkListenerRegistered = false
 
     private var cachedLocalizedContext: Pair<SdkDemoLanguage, Context>? = null
@@ -147,23 +165,15 @@ internal class SdkDemoAppState(
 
     private val listener = object : HappyOysterListener {
         override fun onStatusChanged(status: TravelStatusValue) {
+            travelTransition = travelTransition.confirmed(status)
             travelStatus = status
             SdkDemoLog.add(SdkDemoLogKind.SDK_EVENT, "onStatusChanged", status.rawValue)
-            if (status != TravelStatusValue.Running) {
-                pausing = false
-            }
             if (status == TravelStatusValue.Completed || status == TravelStatusValue.Failed) {
                 val hadActiveTravel = activeTravel != null
+                awaitingFailureDetail = hadActiveTravel && status == TravelStatusValue.Failed
                 leaveTravelScreen()
-                if (hadActiveTravel) {
-                    toast(
-                        if (status == TravelStatusValue.Completed) {
-                            R.string.travel_auto_exited_completed
-                        } else {
-                            R.string.travel_auto_exited_failed
-                        },
-                        long = true,
-                    )
+                if (hadActiveTravel && status == TravelStatusValue.Completed) {
+                    toast(R.string.travel_auto_exited_completed, long = true)
                 }
                 refreshTravels(clearError = false)
             }
@@ -171,48 +181,38 @@ internal class SdkDemoAppState(
 
         override fun onError(sdkError: SDKError) {
             val shouldLeaveTravel = activeTravel != null && sdkError.code.isFatalTravelError()
+            val detail = sdkError.sdkDemoMessage(localizedContext)
             error = SdkDemoError.Sdk(
                 code = sdkError.code,
-                detail = sdkError.sdkDemoMessage(localizedContext),
+                detail = detail,
             )
-            pausing = false
+            if (awaitingFailureDetail || shouldLeaveTravel) {
+                awaitingFailureDetail = false
+                toast(detail, long = true)
+            }
             if (shouldLeaveTravel) {
                 leaveTravelScreen()
-                toast(R.string.travel_auto_exited_failed, long = true)
                 refreshTravels(clearError = false)
             }
             SdkDemoLog.add(SdkDemoLogKind.ERROR, "onError", sdkError.sdkDemoLogString())
         }
     }
 
-    fun initializeSdk() {
-        if (!config.sdkApiHost.isApiHost()) return
+    private fun initializeSdkForWorld(world: DemoWorld, model: String) {
         val label = "HappyOyster.initialize"
-        SdkDemoLog.add(SdkDemoLogKind.SDK_CALL, label, config.sdkApiHost)
-        val result = runCatching {
-            sdkSession.initialize(config.sdkApiHost, config.token)
-        }
-        result.exceptionOrNull()?.let { cause ->
-            if (cause.isTravelBusyError()) {
-                sdkSession.addListener(listener)
-                sdkListenerRegistered = true
-                sdkSession.updateToken(config.token)
-                SdkDemoLog.add(
-                    SdkDemoLogKind.SDK_RESULT,
-                    label,
-                    "travel already active; callbacks restored",
-                )
-                return
-            }
-            report(R.string.action_initialize_sdk, cause)
-            return
-        }
-        SdkDemoLog.add(SdkDemoLogKind.SDK_RESULT, label, "ok")
+        SdkDemoLog.add(SdkDemoLogKind.SDK_CALL, label, "mode=${world.mode}, model=$model")
+        awaitingFailureDetail = false
+        sdkSession.initialize(config.sdkApiHost, model, config.token)
+        // Re-initialization replaces the SDK runtime and clears its listeners.
+        sdkListenerRegistered = false
         sdkSession.addListener(listener)
         sdkListenerRegistered = true
+        SdkDemoLog.add(SdkDemoLogKind.SDK_RESULT, label, "ok")
     }
 
     fun disposeSdkListener() {
+        worldBuildJobs.values.forEach { it.cancel() }
+        worldBuildJobs.clear()
         if (!sdkListenerRegistered) return
         sdkSession.removeListener(listener)
         sdkListenerRegistered = false
@@ -223,28 +223,53 @@ internal class SdkDemoAppState(
         sdkSession.updateToken(config.token)
     }
 
-    fun applyEndpointConfiguration(gatewayBaseUrl: String, sdkApiHost: String) {
-        persist(config.copy(gatewayBaseUrl = gatewayBaseUrl, sdkApiHost = sdkApiHost))
-        if (!config.gatewayBaseUrl.isHttpUrl() || !config.sdkApiHost.isApiHost()) {
+    fun applyEndpointConfiguration(
+        gatewayBaseUrl: String,
+        sdkApiHost: String,
+    ) {
+        val nextGatewayBaseUrl = gatewayBaseUrl.trim()
+        val nextSdkApiHost = sdkApiHost.trim()
+        val environmentChanged = nextGatewayBaseUrl != config.gatewayBaseUrl ||
+            nextSdkApiHost != config.sdkApiHost
+        persist(
+            config.copy(
+                gatewayBaseUrl = nextGatewayBaseUrl,
+                sdkApiHost = nextSdkApiHost,
+                token = if (environmentChanged) "" else config.token,
+                tokenExpiresAtSec = if (environmentChanged) 0L else config.tokenExpiresAtSec,
+            ),
+        )
+        if (environmentChanged || !config.gatewayBaseUrl.isHttpUrl() || !config.sdkApiHost.isApiHost()) {
+            gatewayEpoch += 1
+            worldBuildJobs.values.forEach { it.cancel() }
+            worldBuildJobs.clear()
+            retainedCreatedWorldIds.clear()
             worlds = emptyList()
             travels = emptyList()
+            refreshingWorlds = false
             refreshingTravels = false
             artifactsByTravelId = emptyMap()
             artifactLoadingTravelIds = emptySet()
             artifactPendingTravelIds = emptySet()
+            artifactFailedTravelIds = emptySet()
             artifactRequestedTravelIds = emptySet()
             worldDetailsById = emptyMap()
             coverRequestedWorldIds = emptySet()
             coverLoadingWorldIds = emptySet()
+            inaccessibleWorldDetailIds.clear()
+        }
+        if (!config.gatewayBaseUrl.isHttpUrl() || !config.sdkApiHost.isApiHost()) {
             error = null
             return
         }
         error = null
+        val epoch = gatewayEpoch
         scope.launch {
-            runCatching { refreshTokenNow(refreshWorldsAfter = false) }
+            runCatching { refreshTokenNow() }
                 .rethrowCancellation()
                 .onSuccess { toast(R.string.config_applied_success) }
                 .onFailure { cause ->
+                    if (gatewayEpoch != epoch) return@onFailure
                     error = SdkDemoError.Action(
                         actionResId = R.string.apply_configuration,
                         detail = localizedContext.getString(R.string.gateway_connection_failed),
@@ -273,15 +298,11 @@ internal class SdkDemoAppState(
         store.save(next)
     }
 
-    fun clearToken() {
-        store.clearToken()
-        persist(config.copy(token = "", tokenExpiresAtSec = 0L))
-    }
-
     fun refreshWorlds(showResultToast: Boolean = false) {
         if (refreshingWorlds) return
+        val epoch = gatewayEpoch
+        refreshingWorlds = true
         scope.launch {
-            refreshingWorlds = true
             error = null
             coverRequestedWorldIds = emptySet()
             SdkDemoLog.gatewayCall(
@@ -289,23 +310,62 @@ internal class SdkDemoAppState(
                 render = { "count=${it.size}" },
             ) { requireGatewayClient().listWorlds() }
                 .onSuccess { incoming ->
-                    worlds = incoming.map { world ->
-                        worlds.firstOrNull { cached -> cached.encryptedWorldId == world.encryptedWorldId }
-                            ?.mergeFrom(world)
-                            ?: world
-                    }
+                    if (gatewayEpoch != epoch) return@onSuccess
+                    worlds = mergeWorldListSnapshot(worlds, incoming, retainedCreatedWorldIds)
+                    retainedCreatedWorldIds.removeAll(incoming.map { it.encryptedWorldId }.toSet())
+                    worlds.filter { it.needsBuildTracking() }.forEach(::trackWorldBuild)
                     coverRefreshKey += 1
                     if (showResultToast) toast(R.string.refresh_worlds_success)
                 }
                 .onFailure {
+                    if (gatewayEpoch != epoch) return@onFailure
                     report(R.string.action_load_worlds, it)
                     if (showResultToast) toast(R.string.refresh_worlds_failed, long = true)
                 }
-            refreshingWorlds = false
+            if (gatewayEpoch == epoch) refreshingWorlds = false
         }
     }
 
+    private fun trackWorldBuild(world: DemoWorld) {
+        val worldId = world.encryptedWorldId
+        if (!world.needsBuildTracking() || worldId in worldBuildJobs) return
+        val mode = world.mode.toWorldKindOrNull() ?: return
+        val client = gatewayClient ?: return
+        val epoch = gatewayEpoch
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                val completed = pollDemoWorldBuild(
+                    query = {
+                        coverRequestLimiter.withPermit { client.getBuildStatus(worldId, mode) }
+                    },
+                    onUpdate = { status ->
+                        if (gatewayEpoch == epoch && worlds.any { it.encryptedWorldId == worldId }) {
+                            worlds = worlds.replaceWorld(status)
+                        }
+                    },
+                )
+                if (!completed && gatewayEpoch == epoch) {
+                    SdkDemoLog.add(SdkDemoLogKind.INFO, "world build", "still pending; refresh to check again")
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (cause: Exception) {
+                if (gatewayEpoch == epoch) report(R.string.action_load_worlds, cause)
+            } finally {
+                if (worldBuildJobs[worldId] === currentCoroutineContext()[Job]) worldBuildJobs.remove(worldId)
+            }
+        }
+        worldBuildJobs[worldId] = job
+        job.start()
+    }
+
     fun loadWorldCover(world: DemoWorld) {
+        if (world.needsBuildTracking()) {
+            trackWorldBuild(world)
+            return
+        }
+        val epoch = gatewayEpoch
+        val client = gatewayClient ?: return
         val worldId = world.encryptedWorldId
         if (world.imageUrl != null || worldId in coverRequestedWorldIds || worldId in coverLoadingWorldIds) return
         coverRequestedWorldIds = coverRequestedWorldIds + worldId
@@ -315,11 +375,16 @@ internal class SdkDemoAppState(
                 SdkDemoLog.gatewayCall(
                     label = "GET /server-api/worlds/build-status",
                     render = { status -> "world=${status.encryptedWorldId}, firstFrame=${status.firstFrame != null}" },
-                ) { requireGatewayClient().getBuildStatus(worldId) }
+                ) {
+                    val mode = requireNotNull(world.mode.toWorldKindOrNull()) { "Unsupported world mode: ${world.mode}" }
+                    client.getBuildStatus(worldId, mode)
+                }
                     .onSuccess { status ->
+                        if (gatewayEpoch != epoch) return@onSuccess
                         worlds = worlds.replaceWorld(status)
                     }
                     .onFailure {
+                        if (gatewayEpoch != epoch) return@onFailure
                         coverRequestedWorldIds = coverRequestedWorldIds - worldId
                         SdkDemoLog.add(
                             SdkDemoLogKind.ERROR,
@@ -328,45 +393,43 @@ internal class SdkDemoAppState(
                         )
                     }
                     .also {
-                        coverLoadingWorldIds = coverLoadingWorldIds - worldId
+                        if (gatewayEpoch == epoch) coverLoadingWorldIds = coverLoadingWorldIds - worldId
                     }
             }
         }
     }
 
-    fun refreshToken() {
-        scope.launch {
-            error = null
-            runCatching { refreshTokenNow(refreshWorldsAfter = true) }
-                .rethrowCancellation()
-                .onFailure { report(R.string.action_refresh_token, it) }
-        }
-    }
-
     fun refreshTravels(clearError: Boolean = true, showResultToast: Boolean = false) {
         if (refreshingTravels) return
+        val epoch = gatewayEpoch
+        refreshingTravels = true
         scope.launch {
-            refreshingTravels = true
-            if (clearError) {
-                error = null
-                artifactPendingTravelIds = emptySet()
-                artifactRequestedTravelIds = emptySet()
+            try {
+                if (clearError) {
+                    error = null
+                    artifactPendingTravelIds = emptySet()
+                    artifactFailedTravelIds = emptySet()
+                    artifactRequestedTravelIds = emptySet()
+                }
+                SdkDemoLog.gatewayCall(
+                    label = "GET /server-api/travels",
+                    render = { "count=${it.size}" },
+                ) { requireGatewayClient().listTravels() }
+                    .onSuccess { incoming ->
+                        if (gatewayEpoch != epoch) return@onSuccess
+                        travels = incoming
+                        artifactRefreshKey += 1
+                        loadWorldDetailsForTravels(incoming, epoch)
+                        if (gatewayEpoch == epoch && showResultToast) toast(R.string.refresh_travels_success)
+                    }
+                    .onFailure {
+                        if (gatewayEpoch != epoch) return@onFailure
+                        report(R.string.action_load_travels, it)
+                        if (showResultToast) toast(R.string.refresh_travels_failed, long = true)
+                    }
+            } finally {
+                if (gatewayEpoch == epoch) refreshingTravels = false
             }
-            SdkDemoLog.gatewayCall(
-                label = "GET /server-api/travels",
-                render = { "count=${it.size}" },
-            ) { requireGatewayClient().listTravels() }
-                .onSuccess { incoming ->
-                    travels = incoming
-                    artifactRefreshKey += 1
-                    loadWorldDetailsForTravels(incoming)
-                    if (showResultToast) toast(R.string.refresh_travels_success)
-                }
-                .onFailure {
-                    report(R.string.action_load_travels, it)
-                    if (showResultToast) toast(R.string.refresh_travels_failed, long = true)
-                }
-            refreshingTravels = false
         }
     }
 
@@ -379,14 +442,20 @@ internal class SdkDemoAppState(
         ) {
             return
         }
+        val epoch = gatewayEpoch
         artifactRequestedTravelIds = artifactRequestedTravelIds + travelId
+        artifactFailedTravelIds = artifactFailedTravelIds - travelId
         scope.launch {
             artifactLoadingTravelIds = artifactLoadingTravelIds + travelId
             SdkDemoLog.gatewayCall(
                 label = "GET /server-api/travels/artifacts",
                 render = { "video=${it.video?.original?.url != null}" },
-            ) { requireGatewayClient().getTravelArtifacts(travelId) }
+            ) {
+                val mode = requireNotNull(travel.mode.toWorldKindOrNull()) { "Unsupported travel mode: ${travel.mode}" }
+                requireGatewayClient().getTravelArtifacts(travelId, mode)
+            }
                 .onSuccess { artifacts ->
+                    if (gatewayEpoch != epoch) return@onSuccess
                     artifactsByTravelId = artifactsByTravelId + (travelId to artifacts)
                     artifactPendingTravelIds = if (artifacts.video?.original?.url.isNullOrBlank()) {
                         artifactPendingTravelIds + travelId
@@ -395,6 +464,7 @@ internal class SdkDemoAppState(
                     }
                 }
                 .onFailure {
+                    if (gatewayEpoch != epoch) return@onFailure
                     if ((it as? DemoGatewayException)?.code == 404000) {
                         artifactPendingTravelIds = artifactPendingTravelIds + travelId
                         SdkDemoLog.add(
@@ -402,17 +472,13 @@ internal class SdkDemoAppState(
                             "travel artifact processing",
                             "travel=$travelId, ${it.sdkDemoLogString()}",
                         )
-                    } else if (showError) {
-                        report(R.string.action_load_artifacts, it)
                     } else {
-                        SdkDemoLog.add(
-                            SdkDemoLogKind.ERROR,
-                            "travel artifact load",
-                            "travel=$travelId, ${it.sdkDemoLogString()}",
-                        )
+                        artifactFailedTravelIds = artifactFailedTravelIds + travelId
+                        artifactRequestedTravelIds = artifactRequestedTravelIds - travelId
+                        if (showError) report(R.string.action_load_artifacts, it)
                     }
                 }
-            artifactLoadingTravelIds = artifactLoadingTravelIds - travelId
+            if (gatewayEpoch == epoch) artifactLoadingTravelIds = artifactLoadingTravelIds - travelId
         }
     }
 
@@ -466,6 +532,9 @@ internal class SdkDemoAppState(
     }
 
     fun createWorld() {
+        if (creatingWorld) return
+        creatingWorld = true
+        val epoch = gatewayEpoch
         val form = createForm
         val isScriptList = form.worldKind == WorldKind.Story &&
             form.storyCreationModel == StoryCreationModel.ScriptList
@@ -473,36 +542,42 @@ internal class SdkDemoAppState(
             ?.let { id -> scriptListPresets.firstOrNull { it.id == id } }
         scope.launch {
             error = null
-            SdkDemoLog.gatewayCall(
-                label = "POST /server-api/worlds",
-                render = { "world=${it.encryptedWorldId}, status=${it.status}" },
-            ) {
-                requireGatewayClient().createWorld(
-                    kind = form.worldKind,
-                    wanderUploadMode = form.wanderUploadMode,
-                    prompt = form.prompt,
-                    firstFrameImageUrl = form.firstFrameImageUrl,
-                    scenePrompt = form.scenePrompt,
-                    sceneImageUrl = form.sceneImageUrl,
-                    rolePrompt = form.rolePrompt,
-                    roleImageUrl = form.roleImageUrl,
-                    cameraView = form.cameraView,
-                    resolution = form.resolution,
-                    creationModel = if (isScriptList) StoryCreationModel.ScriptList else StoryCreationModel.Simple,
-                    scriptList = if (isScriptList) {
-                        val draft = ScriptListDrafts.parse(form.scriptListDraft)
-                        draft.copy(
-                            synopsis = form.scriptListSynopsis.trim(),
-                            videoTitle = preset?.name ?: draft.videoTitle,
-                        )
-                    } else {
-                        null
-                    },
-                )
-            }.onSuccess {
-                selectedTab = DemoTab.Play
-                refreshWorlds()
-            }.onFailure { report(R.string.action_create_world, it) }
+            try {
+                SdkDemoLog.gatewayCall(
+                    label = "POST /server-api/worlds",
+                    render = { "world=${it.encryptedWorldId}, status=${it.status}" },
+                ) {
+                    requireGatewayClient().createWorld(
+                        kind = form.worldKind,
+                        prompt = form.prompt,
+                        firstFrameImageUrl = form.firstFrameImageUrl,
+                        cameraView = form.cameraView,
+                        resolution = form.resolution,
+                        actingAspectRatio = form.actingAspectRatio,
+                        inputImages = form.referenceImages.map { it.value },
+                        creationModel = if (isScriptList) StoryCreationModel.ScriptList else StoryCreationModel.Simple,
+                        scriptList = if (isScriptList) {
+                            val draft = ScriptListDrafts.parse(form.scriptListDraft)
+                            draft.copy(
+                                synopsis = form.scriptListSynopsis.trim(),
+                                videoTitle = preset?.name ?: draft.videoTitle,
+                            )
+                        } else {
+                            null
+                        },
+                    )
+                }.onSuccess { created ->
+                    if (gatewayEpoch == epoch) {
+                        retainedCreatedWorldIds += created.encryptedWorldId
+                        worlds = worlds.replaceWorld(created)
+                        trackWorldBuild(created)
+                        selectedTab = DemoTab.Play
+                        refreshWorlds()
+                    }
+                }.onFailure { if (gatewayEpoch == epoch) report(R.string.action_create_world, it) }
+            } finally {
+                creatingWorld = false
+            }
         }
     }
 
@@ -524,50 +599,72 @@ internal class SdkDemoAppState(
             ) {
                 requireGatewayClient().updateScript(
                     encryptedTravelId = travel.data.encryptedTravelId,
-                    // Full update replaces acts only; subjects and world-level
-                    // fields stay as stored at creation time.
+                    // Updates replace acts; subjects remain bound to the world.
                     scriptList = ScriptListPayload(acts = ScriptListDrafts.parse(draft).acts),
+                    mode = requireNotNull(travel.world.mode.toWorldKindOrNull()) {
+                        "Unsupported world mode: ${travel.world.mode}"
+                    },
                 )
             }
-                .onSuccess { toast(R.string.update_script_accepted) }
-                .onFailure { report(R.string.action_update_script, it) }
-            updatingScript = false
+                .onSuccess { if (activeTravel === travel) toast(R.string.update_script_accepted) }
+                .onFailure { if (activeTravel === travel) report(R.string.action_update_script, it) }
+            if (activeTravel === travel) updatingScript = false
         }
     }
 
     fun deleteWorld(world: DemoWorld) {
+        val epoch = gatewayEpoch
         scope.launch {
             error = null
             SdkDemoLog.gatewayCall(
                 label = "POST /server-api/worlds/delete",
                 render = { "deleted" },
-            ) { requireGatewayClient().deleteWorld(world.encryptedWorldId) }
+            ) {
+                val mode = requireNotNull(world.mode.toWorldKindOrNull()) { "Unsupported world mode: ${world.mode}" }
+                requireGatewayClient().deleteWorld(world.encryptedWorldId, mode)
+            }
                 .onSuccess {
+                    if (gatewayEpoch != epoch) return@onSuccess
+                    retainedCreatedWorldIds -= world.encryptedWorldId
+                    worldBuildJobs.remove(world.encryptedWorldId)?.cancel()
                     worlds = worlds.filterNot { it.encryptedWorldId == world.encryptedWorldId }
                 }
-                .onFailure { report(R.string.action_delete_world, it) }
+                .onFailure { if (gatewayEpoch == epoch) report(R.string.action_delete_world, it) }
         }
     }
 
     fun startTravel(world: DemoWorld) {
         if (startingTravel || activeTravel != null) return
+        val epoch = gatewayEpoch
         startingTravel = true
         scope.launch {
             error = null
             try {
                 runCatching {
-                    if (!hasFreshToken()) {
-                        refreshTokenNow(refreshWorldsAfter = false)
+                    val model = requireNotNull(config.modelForMode(world.mode)) {
+                        "Unsupported world mode or missing model: ${world.mode}"
                     }
+                    if (!hasFreshToken()) {
+                        refreshTokenNow()
+                    }
+                    ensureGatewayEpoch(epoch)
+                    initializeSdkForWorld(world, model)
                     val credential = SdkDemoLog.gatewayCall(
                         label = "POST /server-api/travel-credential",
                         render = { "world=${it.encryptedWorldId}, expiresIn=${it.expiresIn}" },
-                    ) { requireGatewayClient().getTravelCredential(world.encryptedWorldId) }.getOrThrow()
+                    ) {
+                        val mode = requireNotNull(world.mode.toWorldKindOrNull()) {
+                            "Unsupported world mode: ${world.mode}"
+                        }
+                        requireGatewayClient().getTravelCredential(world.encryptedWorldId, mode)
+                    }.getOrThrow()
+                    ensureGatewayEpoch(epoch)
                     val started = SdkDemoLog.sdkCall(
                         label = "HappyOyster.startTravel(ticket)",
                         render = { "travel=${it.encryptedTravelId}, mode=${it.mode.rawValue}, firstFrame=${!it.firstFrame.isNullOrBlank()}" },
                     ) { sdkSession.startTravel(credential.ticket) }.getOrThrow()
                     try {
+                        ensureGatewayEpoch(epoch)
                         val worldWithCover = world.withFirstFrame(started.firstFrame)
                         worlds = worlds.replaceWorld(worldWithCover)
                         ActiveTravel(
@@ -585,9 +682,9 @@ internal class SdkDemoAppState(
                 }.rethrowCancellation().onSuccess {
                     activeTravel = it
                     travelStatus = TravelStatusValue.Init
-                    pausing = false
+                    travelTransition = travelTransition.clear()
                     endingTravel = false
-                }.onFailure(::reportStartTravelFailure)
+                }.onFailure { if (gatewayEpoch == epoch) reportStartTravelFailure(it) }
             } finally {
                 startingTravel = false
             }
@@ -649,92 +746,129 @@ internal class SdkDemoAppState(
         }
     }
 
-    fun pauseTravel() {
-        scope.launch {
-            error = null
-            pausing = true
-            SdkDemoLog.sdkCall(
-                label = "HappyOyster.pauseTravel()",
-                render = { "status=${it.status.rawValue}" },
-            ) { sdkSession.pauseTravel() }
-                .onFailure {
-                    pausing = false
-                    report(R.string.action_pause_travel, it)
-                }
-        }
-    }
+    fun pauseTravel() = runTravelTransition(
+        DemoTravelTransition.Operation.Pause,
+        R.string.action_pause_travel,
+        "HappyOyster.pauseTravel()",
+    ) { sdkSession.pauseTravel() }
 
-    fun resumeTravel() {
-        scope.launch {
-            error = null
-            SdkDemoLog.sdkCall(
-                label = "HappyOyster.resumeTravel()",
-                render = { "status=${it.status.rawValue}" },
-            ) { sdkSession.resumeTravel() }
-                .onFailure { report(R.string.action_resume_travel, it) }
-        }
-    }
+    fun resumeTravel() = runTravelTransition(
+        DemoTravelTransition.Operation.Resume,
+        R.string.action_resume_travel,
+        "HappyOyster.resumeTravel()",
+    ) { sdkSession.resumeTravel() }
 
     fun rewindTravel() {
-        val seconds = rewindToSec.toDoubleOrNull() ?: 0.0
+        val seconds = travelTransition.rewindToSec ?: rewindToSec.toDoubleOrNull() ?: return
+        if (!seconds.isFinite() || seconds <= 0 || seconds % 4.0 != 0.0) return
+        runTravelTransition(
+            DemoTravelTransition.Operation.Rewind,
+            R.string.action_rewind_travel,
+            "HappyOyster.rewindTravel($seconds)",
+            seconds,
+        ) { sdkSession.rewindTravel(seconds) }
+    }
+
+    private fun runTravelTransition(
+        next: DemoTravelTransition.Operation,
+        @StringRes action: Int,
+        label: String,
+        rewindSeconds: Double? = null,
+        operation: suspend () -> Any,
+    ) {
+        val travel = activeTravel ?: return
+        if (endingTravel || !travelTransition.canStart(next, travelStatus)) return
+        travelTransition = travelTransition.begin(next, rewindSeconds)
+        val attempt = travelTransition.epoch
+        error = null
         scope.launch {
-            error = null
-            SdkDemoLog.sdkCall(
-                label = "HappyOyster.rewindTravel($seconds)",
-                render = { "status=${it.status.rawValue}, resumedAt=${it.resumedAtSec}" },
-            ) { sdkSession.rewindTravel(seconds) }
-                .onFailure { report(R.string.action_rewind_travel, it) }
+            SdkDemoLog.sdkCall(label = label, render = { "accepted; awaiting status confirmation" }, block = operation)
+                .onSuccess {
+                    if (activeTravel === travel) travelTransition = travelTransition.accepted(attempt)
+                }
+                .onFailure {
+                    if (activeTravel === travel && !endingTravel && travelTransition.epoch == attempt) {
+                        travelTransition = travelTransition.failed(attempt)
+                        report(action, it)
+                    }
+                }
         }
     }
 
     private fun leaveTravelScreen() {
         activeTravel = null
         travelStatus = null
-        pausing = false
+        travelTransition = travelTransition.clear()
         endingTravel = false
         updatingScript = false
         updateScriptPresetId = null
         updateScriptDraft = ""
     }
 
-    private suspend fun refreshTokenNow(refreshWorldsAfter: Boolean) {
+    private suspend fun refreshTokenNow() {
+        val epoch = gatewayEpoch
         val token = SdkDemoLog.gatewayCall(
             label = "POST /server-api/temp-api-key",
             render = { "expiresAt=${it.expiresAtSec}" },
         ) { requireGatewayClient().mintTempApiKey() }.getOrThrow()
+        ensureGatewayEpoch(epoch)
         val next = config.copy(token = token.token, tokenExpiresAtSec = token.expiresAtSec)
         persist(next)
-        sdkSession.updateToken(next.token)
-        if (refreshWorldsAfter) refreshWorlds()
+        if (sdkListenerRegistered) sdkSession.updateToken(next.token)
     }
 
-    private suspend fun loadWorldDetailsForTravels(incoming: List<DemoTravel>) {
-        val worldIds = incoming
-            .mapNotNull { it.encryptedWorldId }
-            .distinct()
-            .filterNot { it in worldDetailsById }
-        if (worldIds.isEmpty()) return
+    private suspend fun loadWorldDetailsForTravels(incoming: List<DemoTravel>, epoch: Long) {
+        val worldRefs = incoming
+            .mapNotNull { travel -> travel.encryptedWorldId?.let { it to travel.mode } }
+            .distinctBy { it.first }
+            .filterNot { (worldId, _) -> worldId in worldDetailsById || worldId in inaccessibleWorldDetailIds }
+        if (worldRefs.isEmpty()) return
+        val client = requireGatewayClient()
+        val inaccessibleBefore = inaccessibleWorldDetailIds.size
         val details = supervisorScope {
-            worldIds.map { worldId ->
+            worldRefs.map { (worldId, worldMode) ->
                 async {
-                    SdkDemoLog.gatewayCall(
-                        label = "GET /server-api/worlds/detail",
-                        render = { "world=${it.encryptedWorldId}, status=${it.status}" },
-                    ) { requireGatewayClient().getWorldDetail(worldId) }
-                        .onFailure {
-                            SdkDemoLog.add(
-                                SdkDemoLogKind.ERROR,
-                                "world detail load",
-                                "world=$worldId, ${it.sdkDemoLogString()}",
-                            )
+                    runCatching {
+                        val mode = requireNotNull(worldMode.toWorldKindOrNull()) { "Unsupported world mode: $worldMode" }
+                        worldDetailRequestLimiter.withPermit {
+                            ensureGatewayEpoch(epoch)
+                            client.getWorldDetail(worldId, mode).copy(mode = mode.worldMode)
+                        }
+                    }.rethrowCancellation()
+                        .onSuccess {
+                            SdkDemoLog.add(SdkDemoLogKind.GATEWAY, "GET /server-api/worlds/detail", "status=${it.status}")
+                        }
+                        .onFailure { cause ->
+                            if (gatewayEpoch != epoch) return@onFailure
+                            if ((cause as? DemoGatewayException)?.code == 403001) {
+                                inaccessibleWorldDetailIds += worldId
+                            } else {
+                                SdkDemoLog.add(
+                                    SdkDemoLogKind.ERROR,
+                                    "world detail load",
+                                    cause.sdkDemoLogString(),
+                                )
+                            }
                         }
                         .getOrNull()
                 }
             }.awaitAll().filterNotNull()
         }
+        if (gatewayEpoch != epoch) return
+        val inaccessibleCount = inaccessibleWorldDetailIds.size - inaccessibleBefore
+        if (inaccessibleCount > 0) {
+            SdkDemoLog.add(
+                SdkDemoLogKind.INFO,
+                "historical world details unavailable",
+                "count=$inaccessibleCount, code=403001",
+            )
+        }
         if (details.isEmpty()) return
         worldDetailsById = worldDetailsById + details.associateBy { it.encryptedWorldId }
-        worlds = details.fold(worlds) { cached, world -> cached.replaceWorld(world) }
+    }
+
+    private fun ensureGatewayEpoch(epoch: Long) {
+        if (gatewayEpoch != epoch) throw CancellationException("Gateway configuration changed")
     }
 
     private fun hasFreshToken(): Boolean =
@@ -744,12 +878,16 @@ internal class SdkDemoAppState(
         gatewayClient ?: throw IllegalArgumentException(localizedContext.getString(R.string.missing_gateway_base_url))
 
     private fun setError(@StringRes actionResId: Int, cause: Throwable) {
-        val detail = if (cause is SDKError) {
-            cause.sdkDemoMessage(localizedContext)
-        } else {
-            localizedContext.getString(R.string.error_detail_check_log)
+        val detail = when (cause) {
+            is SDKError -> cause.sdkDemoMessage(localizedContext)
+            is DemoGatewayException -> cause.sdkDemoMessage(localizedContext)
+            else -> localizedContext.getString(R.string.gateway_error_generic)
         }
         error = SdkDemoError.Action(actionResId, detail)
+    }
+
+    fun dismissError() {
+        error = null
     }
 
     private fun report(@StringRes actionResId: Int, cause: Throwable) {
@@ -773,9 +911,13 @@ internal class SdkDemoAppState(
     }
 
     private fun toast(@StringRes resId: Int, long: Boolean = false) {
+        toast(localizedContext.getString(resId), long)
+    }
+
+    private fun toast(message: String, long: Boolean = false) {
         Toast.makeText(
             localizedContext,
-            localizedContext.getString(resId),
+            message,
             if (long) Toast.LENGTH_LONG else Toast.LENGTH_SHORT,
         ).show()
     }

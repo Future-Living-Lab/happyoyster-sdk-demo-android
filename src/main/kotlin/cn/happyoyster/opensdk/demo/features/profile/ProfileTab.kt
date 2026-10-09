@@ -2,13 +2,10 @@ package cn.happyoyster.opensdk.demo.features.profile
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -25,6 +22,9 @@ import cn.happyoyster.opensdk.demo.R
 import cn.happyoyster.opensdk.demo.config.SdkDemoConfig
 import cn.happyoyster.opensdk.demo.config.SdkDemoLanguage
 import cn.happyoyster.opensdk.demo.ui.OptionRow
+import cn.happyoyster.opensdk.demo.ui.DemoButton
+import cn.happyoyster.opensdk.demo.ui.DemoCard
+import cn.happyoyster.opensdk.demo.ui.DemoPageHeader
 import cn.happyoyster.opensdk.demo.ui.SelectButton
 import cn.happyoyster.opensdk.demo.ui.isApiHost
 import cn.happyoyster.opensdk.demo.ui.isHttpUrl
@@ -46,11 +46,9 @@ internal fun ProfileTab(
         modifier = Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(stringResource(R.string.config_title), style = MaterialTheme.typography.headlineSmall)
-        Text(
-            text = stringResource(R.string.config_description),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        DemoPageHeader(
+            title = stringResource(R.string.config_title),
+            description = stringResource(R.string.config_description),
         )
         if (!configDraftValid) {
             Text(
@@ -59,8 +57,8 @@ internal fun ProfileTab(
                 color = MaterialTheme.colorScheme.primary,
             )
         }
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        DemoCard(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(stringResource(R.string.environment), fontWeight = FontWeight.SemiBold)
                 OutlinedTextField(
                     value = gatewayBaseUrlDraft,
@@ -76,7 +74,7 @@ internal fun ProfileTab(
                     label = { Text(stringResource(R.string.sdk_api_host)) },
                     supportingText = { Text(stringResource(R.string.sdk_api_host_help)) },
                 )
-                Button(
+                DemoButton(
                     onClick = {
                         onApplyConfiguration(
                             gatewayBaseUrlDraft.trim(),
@@ -90,8 +88,8 @@ internal fun ProfileTab(
                 }
             }
         }
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        DemoCard(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OptionRow(stringResource(R.string.language)) {
                     SelectButton(
                         label = stringResource(R.string.language_chinese),

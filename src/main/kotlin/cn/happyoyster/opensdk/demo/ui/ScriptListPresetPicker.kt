@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -16,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import cn.happyoyster.opensdk.demo.R
 import cn.happyoyster.opensdk.demo.app.ScriptListPreset
+import cn.happyoyster.opensdk.demo.ui.DemoOutlinedButton
 
 /** Dropdown selector for the bundled 45-turn ScriptList presets. */
 @Composable
@@ -27,8 +27,13 @@ internal fun ScriptListPresetPicker(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val selected = presets.firstOrNull { it.id == selectedPresetId }
+    val labels = presets.associate { preset ->
+        preset.id to (stringResource(
+            R.string.script_list_preset_option, preset.name, preset.scenario, preset.actCount,
+        ) to preset.subjectSummaryText())
+    }
     Column(modifier = modifier) {
-        OutlinedButton(
+        DemoOutlinedButton(
             onClick = { expanded = true },
             modifier = Modifier.fillMaxWidth(),
             enabled = presets.isNotEmpty(),
@@ -54,16 +59,9 @@ internal fun ScriptListPresetPicker(
                 DropdownMenuItem(
                     text = {
                         Column {
+                            Text(labels.getValue(preset.id).first)
                             Text(
-                                stringResource(
-                                    R.string.script_list_preset_option,
-                                    preset.name,
-                                    preset.scenario,
-                                    preset.actCount,
-                                ),
-                            )
-                            Text(
-                                text = preset.subjectSummaryText(),
+                                text = labels.getValue(preset.id).second,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

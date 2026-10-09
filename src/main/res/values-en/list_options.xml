@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="list_filter_label">Mode</string>
+    <string name="list_sort_label">Sort by time</string>
+    <string name="list_all_modes">All</string>
+    <string name="list_newest_first">Newest first</string>
+    <string name="list_oldest_first">Oldest first</string>
+    <string name="list_no_matches">No matching records</string>
+    <string name="list_try_another_mode">Try another mode or select All.</string>
+</resources>

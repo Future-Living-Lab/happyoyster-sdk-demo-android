@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="acting_create_help_required">Acting requires a description and a first-frame image.</string>
+    <string name="create_world_in_progress">Creating…</string>
+    <string name="story_reference_images_help">Optionally add up to 6 reference images using URLs, Base64, the image picker, or clipboard paste.</string>
+    <string name="story_reference_image_number">Reference image %1$d</string>
+    <string name="story_reference_image_label">Reference image URL or Base64</string>
+    <string name="story_reference_image_optional">Optional; blank entries are not submitted</string>
+    <string name="story_reference_image_add">Add reference image</string>
+    <string name="story_reference_image_remove">Remove reference image</string>
+</resources>
